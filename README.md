@@ -1,13 +1,17 @@
 # AutoCount ERP Gateway
 
-Minimal Flask + Vite React frontend for AutoCount integration. The UI only exposes:
+Flask + Vite React gateway over AutoCount for Seng Chong Interior Design.
 
-- Invoices
-- Quotations
-- Items
-- Purchase Orders
+The UI covers projects/jobs, quotations, invoices, AR payments and deposits,
+purchase orders, AP invoices/payments/deposits, cash book, bank transactions
+and reconciliation, items, debtors, creditors, ERP user management, the RDP
+allow-list, and the content of `sengchong.com`.
 
-Flask verifies login through AutoCount SDK `UserSession.Login()` and reads the allowed modules through AutoCount SDK classes. The frontend stays on a standalone login page until that SDK login succeeds.
+Login is against **ERP users**, stored by this application in Postgres --
+not against AutoCount's own user accounts. The frontend stays on a standalone
+login page until that succeeds. AutoCount is read through direct SQL, written
+through the AutoCount SDK (a PowerShell bridge), and printed through its
+report engine.
 
 ## Backend
 
@@ -214,15 +218,64 @@ nginx/README.md
 
 ## API Routes
 
+One blueprint per domain, each in `function/routes/`. `python3 -c "from function
+import create_app; [print(r) for r in create_app().url_map.iter_rules()]"` lists
+the current set; the shape is:
+
 ```text
-POST /api/autocount/login
-GET /api/autocount/invoices
-GET /api/autocount/quotations
-GET /api/autocount/items
-GET /api/autocount/purchase-orders
-GET /api/autocount/:resource/:docNo-or-itemCode
-POST /api/autocount/invoices          create AR invoice draft
-POST /api/autocount/quotations        create quotation draft
-POST /api/autocount/items             create item
-POST /api/autocount/purchase-orders   create purchase order draft
+GET    /health
+
+POST   /api/auth/login                     sign in, returns a bearer token
+GET    /api/auth/me                        current session
+PUT    /api/session/company                switch the active AutoCount company
+GET    /api/companies
+
+GET    /api/users                          ERP accounts (admin)
+POST   /api/users
+DELETE /api/users/:username
+
+GET    /api/rdp-allow-list                 RDP firewall allow-list (admin)
+PUT    /api/rdp-allow-list
+POST   /api/rdp-allow-list/ip
+DELETE /api/rdp-allow-list/ip/:ip
+POST   /api/rdp-allow-list/apply
+
+GET    /api/website-content                sengchong.com content
+PATCH  /api/website-content/footer
+PATCH  /api/website-content/services/:no
+PATCH  /api/website-content/contacts/:no
+GET    /api/website-content/assets/:kind
+POST   /api/website-content/assets/:kind
+GET    /api/website-gallery
+POST   /api/website-gallery/import-legacy-products
+GET    /api/website-audit-log
+
+GET    /api/projects                       ERP-owned project/job layer
+POST   /api/projects
+GET    /api/projects/:key
+PUT    /api/projects/:key
+GET    /api/projects/meta
+GET    /api/projects/by-document
+GET    /api/projects/candidates/from-debtors
+GET    /api/projects/candidates/from-documents
+GET    /api/projects/:key/photos
+POST   /api/projects/:key/photos
+PATCH  /api/project-photos/:id
+DELETE /api/project-photos/:id
+GET    /api/project-photos/:id/file
+
+*      /api/autocount/:resource             AutoCount passthrough (see
+*      /api/autocount/:resource/:key        allowed_resources in config.py)
+GET    /api/autocount/:resource/pdf
+POST   /api/autocount/invoices/payment-request/pdf
+POST   /api/autocount/bank-transactions/reconcile-preview
+POST   /api/autocount/bank-transactions/reconcile
+
+GET    /public-api/website                  read-only, for sengchong.com
+GET    /public-api/gallery
+GET    /public-api/project-photos/:id/file
 ```
+
+Everything under `/api` except `/api/auth/login` requires
+`Authorization: Bearer <token>`. `/public-api` is unauthenticated and must
+never expose customer, accounting, cost or document data.

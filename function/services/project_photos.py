@@ -24,7 +24,6 @@ SERVICE_CATEGORIES = (
     "展示柜",
     "设计",
 )
-BOOLEAN_FIELDS = {"isPublic", "websiteVisible", "isCover"}
 TEXT_FIELDS = {
     "serviceCategory": "service_category",
     "caption": "caption",

@@ -16,29 +16,6 @@ class AutoCountSdk:
         self._cache = {}
         self._cache_lock = Lock()
 
-    def login(self, *, database, username, password):
-        if not username:
-            return False, {"error": "Username is required."}
-
-        return self._run_json(
-            [
-                "-File",
-                str(self.settings.autocount_login_script),
-                "-SqlServer",
-                self.settings.autocount_sql_server,
-                "-SqlUser",
-                self.settings.autocount_sql_user,
-                "-SqlPassword",
-                self.settings.autocount_sql_password,
-                "-Database",
-                database or self.settings.autocount_default_database,
-                "-User",
-                username,
-                "-Password",
-                password or "",
-            ]
-        )
-
     def list_resource(self, resource, session, *, refresh=False):
         if not self.settings.autocount_bridge_configured:
             return False, {"error": "AutoCount bridge account is not configured."}

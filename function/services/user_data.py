@@ -59,10 +59,6 @@ class UserDataStore:
         db.session.commit()
         return self._public_user(user)
 
-    def get_user(self, username):
-        user = db.session.get(ErpUser, _normalize_username(username))
-        return self._public_user(user) if user else None
-
     def list_users(self):
         users = db.session.scalars(db.select(ErpUser).order_by(ErpUser.username)).all()
         return [self._public_user(user) for user in users]
@@ -93,9 +89,6 @@ class UserDataStore:
         user.updated_at = now()
         db.session.commit()
         return self._public_user(user)
-
-    def has_users(self):
-        return db.session.scalar(db.select(db.func.count()).select_from(ErpUser)) > 0
 
     @staticmethod
     def _public_user(user):

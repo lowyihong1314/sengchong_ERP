@@ -17,6 +17,7 @@ def list_users():
 
     return jsonify({"data": _user_data().list_users()})
 
+
 @users_bp.post("/users")
 def save_user():
     _, auth_error = _require_admin_session()
@@ -50,6 +51,7 @@ def save_user():
         return jsonify({"error": str(error)}), 400
 
     return jsonify(user), 201
+
 
 @users_bp.delete("/users/<path:username>")
 def delete_user(username):

@@ -69,7 +69,6 @@ class Settings:
     autocount_app_user: str
     autocount_app_password: str
     autocount_default_database: str
-    autocount_login_script: Path
     autocount_list_script: Path
     autocount_detail_script: Path
     autocount_create_script: Path
@@ -111,7 +110,6 @@ class Settings:
             autocount_app_user=env("AUTOCOUNT_APP_USER", env("AUTOCOUNT_USER", "ADMIN")),
             autocount_app_password=env("AUTOCOUNT_APP_PASSWORD", env("AUTOCOUNT_PASSWORD", "")),
             autocount_default_database=env("AUTOCOUNT_DEFAULT_DATABASE", "AED_SENG"),
-            autocount_login_script=BASE_DIR / "scripts" / "autocount_login.ps1",
             autocount_list_script=BASE_DIR / "scripts" / "autocount_list.ps1",
             autocount_detail_script=BASE_DIR / "scripts" / "autocount_detail.ps1",
             autocount_create_script=BASE_DIR / "scripts" / "autocount_create.ps1",

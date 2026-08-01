@@ -16,6 +16,7 @@ def public_gallery():
     company = request.args.get("company") or ""
     return jsonify({"data": _project_photos().public_gallery(company)})
 
+
 @public_bp.get("/website")
 def public_website_payload():
     company = request.args.get("company") or ""
@@ -47,6 +48,7 @@ def public_website_payload():
             "galleryCount": len(gallery),
         }
     )
+
 
 @public_bp.get("/project-photos/<photo_id>/file")
 def public_project_photo_file(photo_id):

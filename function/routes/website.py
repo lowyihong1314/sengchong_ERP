@@ -25,19 +25,23 @@ WEBSITE_ASSET_KINDS = {"service", "contact"}
 
 WEBSITE_ASSET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
+
 def _website_asset_dir(kind):
     kind = str(kind or "").strip().lower()
     if kind not in WEBSITE_ASSET_KINDS:
         raise ValueError("invalid_asset_kind")
     return _settings().sengchong_static_dir / "images" / kind
 
+
 def _website_asset_url(kind, filename):
     return f"/static/images/{kind}/{filename}"
+
 
 def _safe_asset_stem(filename, fallback):
     stem = Path(str(filename or "")).stem
     text = re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip(".-")[:64]
     return text or fallback
+
 
 def _save_website_asset(kind, uploaded_file):
     if not uploaded_file or not uploaded_file.filename:
@@ -60,6 +64,7 @@ def _save_website_asset(kind, uploaded_file):
 
     return filename
 
+
 @website_bp.get("/website-content")
 def get_website_content():
     _, auth_error = _require_session()
@@ -67,6 +72,7 @@ def get_website_content():
         return auth_error
 
     return jsonify(_sengchong_content().get_content())
+
 
 @website_bp.get("/website-content/assets/<kind>")
 def list_website_assets(kind):
@@ -98,6 +104,7 @@ def list_website_assets(kind):
             )
     return jsonify({"data": assets, "count": len(assets)})
 
+
 @website_bp.post("/website-content/assets/<kind>")
 def upload_website_asset(kind):
     _, auth_error = _require_session()
@@ -121,6 +128,7 @@ def upload_website_asset(kind):
         201,
     )
 
+
 @website_bp.patch("/website-content/footer")
 def update_website_footer():
     session, auth_error = _require_session()
@@ -133,6 +141,7 @@ def update_website_footer():
         username=session["username"],
     )
     return jsonify(_sengchong_content().get_content())
+
 
 @website_bp.patch("/website-content/services/<int:service_no>")
 def update_website_service(service_no):
@@ -153,6 +162,7 @@ def update_website_service(service_no):
     )
     return jsonify(_sengchong_content().get_content())
 
+
 @website_bp.patch("/website-content/contacts/<int:contact_no>")
 def update_website_contact(contact_no):
     session, auth_error = _require_session()
@@ -170,6 +180,7 @@ def update_website_contact(contact_no):
     )
     return jsonify(_sengchong_content().get_content())
 
+
 @website_bp.get("/website-gallery")
 def website_gallery():
     session, auth_error = _require_session()
@@ -177,6 +188,7 @@ def website_gallery():
         return auth_error
 
     return jsonify(_project_photos().website_gallery(session["database"]))
+
 
 @website_bp.post("/website-gallery/import-legacy-products")
 def import_legacy_website_gallery():
@@ -195,6 +207,7 @@ def import_legacy_website_gallery():
         return jsonify({"error": str(error)}), 400
 
     return jsonify({**result, "gallery": _project_photos().website_gallery(session["database"])})
+
 
 @website_bp.get("/website-audit-log")
 def website_audit_log():

@@ -9,7 +9,6 @@ from pathlib import Path
 from flask import Blueprint, after_this_request, current_app, jsonify, request, send_file
 
 
-from .auth import auth_login
 from .common import (
     _refresh_requested,
     _require_session,
@@ -24,25 +23,26 @@ autocount_bp = Blueprint("autocount", __name__, url_prefix="/api/autocount")
 
 PDF_RESOURCES = {"invoices", "ar-payments", "quotations", "purchase-orders", "debtors"}
 
+
 def _bank_recon_state(row):
     status = str(row.get("bankReconStatus") or "").strip()
     label = str(row.get("bankReconStatusLabel") or "").strip().lower()
     return "reconciled" if status == "1" or label == "reconciled" else "open"
 
+
 def _bank_recon_label(state):
     return "Reconciled" if state == "reconciled" else "Open"
 
-@autocount_bp.post("/login")
-def autocount_login():
-    return auth_login()
 
 @autocount_bp.get("/<resource>/pdf")
 def autocount_pdf_by_query(resource):
     return _send_autocount_pdf(resource, request.args.get("key") or "")
 
+
 @autocount_bp.get("/<resource>/<path:key>/pdf")
 def autocount_pdf(resource, key):
     return _send_autocount_pdf(resource, key)
+
 
 @autocount_bp.post("/invoices/payment-request/pdf")
 def invoice_payment_request_pdf():
@@ -86,6 +86,7 @@ def invoice_payment_request_pdf():
         as_attachment=True,
         download_name=pdf_result.get("filename") or f"payment-request-{key}.pdf",
     )
+
 
 @autocount_bp.post("/bank-transactions/reconcile-preview")
 def bank_transactions_reconcile_preview():
@@ -205,6 +206,7 @@ def bank_transactions_reconcile_preview():
             "data": preview_rows,
         }
     )
+
 
 @autocount_bp.post("/bank-transactions/reconcile")
 def bank_transactions_reconcile():
@@ -326,6 +328,7 @@ def bank_transactions_reconcile():
 
     return jsonify(result)
 
+
 def _send_autocount_pdf(resource, key):
     settings = _settings()
 
@@ -369,6 +372,7 @@ def _send_autocount_pdf(resource, key):
         as_attachment=True,
         download_name=result.get("filename") or f"{resource}-{key}.pdf",
     )
+
 
 @autocount_bp.route(
     "/<resource>",

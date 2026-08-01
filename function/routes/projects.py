@@ -40,6 +40,7 @@ PROJECT_DOCUMENT_CANDIDATE_MODULES = {
     },
 }
 
+
 def _compact_address(source):
     parts = []
     for key in ("address1", "address2", "address3", "address4", "address"):
@@ -47,6 +48,7 @@ def _compact_address(source):
         if value:
             parts.append(value)
     return "\n".join(parts)
+
 
 def _project_draft_from_debtor(debtor):
     debtor_code = str(debtor.get("debtorCode") or "").strip()
@@ -72,6 +74,7 @@ def _project_draft_from_debtor(debtor):
         "__sourceModule": "debtors",
         "__sourceKey": debtor_code,
     }
+
 
 def _project_candidate_from_debtor(debtor, existing_projects):
     draft = _project_draft_from_debtor(debtor)
@@ -99,14 +102,17 @@ def _project_candidate_from_debtor(debtor, existing_projects):
         "draft": draft,
     }
 
+
 def _is_cancelled(document):
     value = document.get("cancelled")
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "t", "yes", "y"}
 
+
 def _normalize_match_text(value):
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
 
 def _match_tokens(value):
     text = _normalize_match_text(value)
@@ -115,6 +121,7 @@ def _match_tokens(value):
         for token in re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]+", text)
         if len(token) > 1
     }
+
 
 def _text_match_score(left, right, points):
     left_text = _normalize_match_text(left)
@@ -130,6 +137,7 @@ def _text_match_score(left, right, points):
         overlap = len(left_tokens & right_tokens) / max(len(left_tokens), len(right_tokens))
     return round(points * max(ratio, overlap))
 
+
 def _number_value(value):
     if value in (None, ""):
         return None
@@ -137,6 +145,7 @@ def _number_value(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
 
 def _parse_date(value):
     if not value:
@@ -151,6 +160,7 @@ def _parse_date(value):
         return datetime.fromisoformat(text).date()
     except ValueError:
         return None
+
 
 def _amount_match_score(document_amount, project):
     amount = _number_value(document_amount)
@@ -181,6 +191,7 @@ def _amount_match_score(document_amount, project):
             best_label = label
     return best_score, best_label
 
+
 def _date_match_score(document_date, project):
     doc_date = _parse_date(document_date)
     if not doc_date:
@@ -201,6 +212,7 @@ def _date_match_score(document_date, project):
     if best_days <= 90:
         return 3
     return 0
+
 
 def _score_project_document_match(candidate, project):
     score = 0
@@ -245,6 +257,7 @@ def _score_project_document_match(candidate, project):
 
     return min(score, 100), reasons
 
+
 def _project_draft_from_document(module, document):
     config = PROJECT_DOCUMENT_CANDIDATE_MODULES[module]
     doc_no = str(document.get("docNo") or "").strip()
@@ -279,6 +292,7 @@ def _project_draft_from_document(module, document):
         draft["outstandingAmount"] = document.get("outstanding") or ""
 
     return draft
+
 
 def _project_candidate_from_document(module, document, existing_projects, debtor_profile, all_projects):
     draft = _project_draft_from_document(module, document)
@@ -333,6 +347,7 @@ def _project_candidate_from_document(module, document, existing_projects, debtor
     candidate["matchReasons"] = recommended["matchReasons"] if recommended else []
     return candidate
 
+
 @projects_bp.get("/projects/meta")
 def projects_meta():
     _, auth_error = _require_session()
@@ -340,6 +355,7 @@ def projects_meta():
         return auth_error
 
     return jsonify(_project_data().meta())
+
 
 @projects_bp.get("/projects/by-document")
 def projects_by_document():
@@ -353,6 +369,7 @@ def projects_by_document():
         request.args.get("key") or "",
     )
     return jsonify({"data": projects})
+
 
 @projects_bp.get("/projects/candidates/from-debtors")
 def project_candidates_from_debtors():
@@ -406,6 +423,7 @@ def project_candidates_from_debtors():
             "existingDebtorProjectCount": len(existing_by_debtor),
         }
     )
+
 
 @projects_bp.get("/projects/candidates/from-documents")
 def project_candidates_from_documents():
@@ -496,6 +514,7 @@ def project_candidates_from_documents():
         }
     )
 
+
 @projects_bp.get("/projects/<path:project_key>/photos")
 def list_project_photos(project_key):
     session, auth_error = _require_session()
@@ -506,6 +525,7 @@ def list_project_photos(project_key):
     if photos is None:
         return jsonify({"error": "project_not_found"}), 404
     return jsonify({"data": photos})
+
 
 @projects_bp.post("/projects/<path:project_key>/photos")
 def upload_project_photos(project_key):
@@ -536,6 +556,7 @@ def upload_project_photos(project_key):
         return jsonify({"error": "project_not_found"}), 404
     return jsonify({"data": photos}), 201
 
+
 @projects_bp.get("/projects/draft-from-debtor/<path:debtor_key>")
 def project_draft_from_debtor(debtor_key):
     session, auth_error = _require_session()
@@ -558,6 +579,7 @@ def project_draft_from_debtor(debtor_key):
         return jsonify({"error": f"Debtor not found: {debtor_key}"}), 404
     return jsonify(_project_draft_from_debtor(debtor))
 
+
 @projects_bp.get("/projects")
 def list_projects():
     session, auth_error = _require_session()
@@ -565,6 +587,7 @@ def list_projects():
         return auth_error
 
     return jsonify({"data": _project_data().list_projects(session["database"])})
+
 
 @projects_bp.post("/projects")
 def create_project():
@@ -579,6 +602,7 @@ def create_project():
         return jsonify({"error": str(error)}), 400
     return jsonify(project), 201
 
+
 @projects_bp.get("/projects/<path:project_key>")
 def get_project(project_key):
     session, auth_error = _require_session()
@@ -590,6 +614,7 @@ def get_project(project_key):
         return jsonify({"error": "project_not_found"}), 404
     project["photos"] = _project_photos().list_photos(session["database"], project_key) or []
     return jsonify(project)
+
 
 @projects_bp.patch("/projects/<path:project_key>")
 @projects_bp.put("/projects/<path:project_key>")
@@ -612,6 +637,7 @@ def update_project(project_key):
         return jsonify({"error": "project_not_found"}), 404
     return jsonify(project)
 
+
 @projects_bp.patch("/project-photos/<photo_id>")
 def update_project_photo(photo_id):
     session, auth_error = _require_session()
@@ -632,6 +658,7 @@ def update_project_photo(photo_id):
         return jsonify({"error": "photo_not_found"}), 404
     return jsonify(photo)
 
+
 @projects_bp.delete("/project-photos/<photo_id>")
 def delete_project_photo(photo_id):
     session, auth_error = _require_session()
@@ -642,6 +669,7 @@ def delete_project_photo(photo_id):
     if not photo:
         return jsonify({"error": "photo_not_found"}), 404
     return jsonify({"deleted": photo})
+
 
 @projects_bp.get("/project-photos/<photo_id>/file")
 def project_photo_file(photo_id):

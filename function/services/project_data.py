@@ -70,11 +70,6 @@ DOCUMENT_FIELDS = {
     "arPaymentDocNos": "ar-payments",
     "apInvoiceDocNos": "ap-invoices",
 }
-LIST_DOCUMENT_FIELDS = {
-    "purchaseOrderDocNos",
-    "arPaymentDocNos",
-    "apInvoiceDocNos",
-}
 
 
 def _normalize_company(company):

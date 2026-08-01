@@ -20,6 +20,7 @@ def get_rdp_allow_list():
 
     return jsonify(rdp_allow_list.status_payload())
 
+
 @rdp_bp.put("/rdp-allow-list")
 def update_rdp_allow_list():
     _, auth_error = _require_session()
@@ -45,6 +46,7 @@ def update_rdp_allow_list():
         }
     )
 
+
 @rdp_bp.post("/rdp-allow-list/ip")
 def add_rdp_allow_ip():
     _, auth_error = _require_session()
@@ -60,6 +62,7 @@ def add_rdp_allow_ip():
     apply_result = rdp_allow_list.trigger_apply()
     return jsonify({**rdp_allow_list.status_payload(), "apply": apply_result})
 
+
 @rdp_bp.delete("/rdp-allow-list/ip/<ip>")
 def remove_rdp_allow_ip(ip):
     _, auth_error = _require_session()
@@ -73,6 +76,7 @@ def remove_rdp_allow_ip(ip):
 
     apply_result = rdp_allow_list.trigger_apply()
     return jsonify({**rdp_allow_list.status_payload(), "apply": apply_result})
+
 
 @rdp_bp.post("/rdp-allow-list/apply")
 def apply_rdp_allow_list():

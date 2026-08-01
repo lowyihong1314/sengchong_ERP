@@ -35,9 +35,11 @@ def _session_payload(token, session):
         "companies": _company_databases(),
     }
 
+
 @auth_bp.get("/companies")
 def companies():
     return jsonify({"companies": _company_databases()})
+
 
 @auth_bp.post("/auth/login")
 def auth_login():
@@ -71,6 +73,7 @@ def auth_login():
     session = _sessions().get(token)
     return jsonify(_session_payload(token, session))
 
+
 @auth_bp.get("/auth/me")
 def auth_me():
     token = _bearer_token()
@@ -78,6 +81,7 @@ def auth_me():
     if auth_error:
         return auth_error
     return jsonify(_session_payload(token, session))
+
 
 @auth_bp.put("/session/company")
 def switch_company():
