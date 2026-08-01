@@ -44,7 +44,7 @@ def create_app():
     )
     app.extensions["autocount_sdk"] = AutoCountSdk(settings)
     app.extensions["sql_reader"] = SqlReadService(settings)
-    app.extensions["user_data"] = UserDataStore(erp_db)
+    app.extensions["user_data"] = UserDataStore()
     app.extensions["project_data"] = ProjectDataStore(erp_db)
     app.extensions["project_photos"] = ProjectPhotoStore(erp_db, settings.base_dir)
     app.extensions["sengchong_content"] = SengchongContentStore(erp_db)
