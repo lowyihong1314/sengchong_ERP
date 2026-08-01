@@ -1,4 +1,10 @@
 Flask==3.0.3
+Flask-SQLAlchemy>=3.1
+SQLAlchemy>=2.0
+alembic>=1.13
 pymssql==2.3.13
 Pillow
 gunicorn
+
+# Uncomment when erp_data.db moves to Postgres (see docs/postgres-migration.md).
+# psycopg[binary]>=3.2

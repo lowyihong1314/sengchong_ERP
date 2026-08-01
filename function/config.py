@@ -53,6 +53,7 @@ class Settings:
     base_dir: Path
     frontend_dist_dir: Path
     erp_db_path: Path
+    database_url: str
     sengchong_static_dir: Path
     sengchong_template_dir: Path
     flask_secret_key: str
@@ -87,6 +88,10 @@ class Settings:
             base_dir=BASE_DIR,
             frontend_dist_dir=BASE_DIR / "frontend" / "dist",
             erp_db_path=BASE_DIR / "erp_data.db",
+            # The single switch for the eventual Postgres move. Leave unset to
+            # keep using the local SQLite file; set to
+            # postgresql+psycopg://user:pass@host/dbname to move over.
+            database_url=env("DATABASE_URL", "") or f"sqlite:///{BASE_DIR / 'erp_data.db'}",
             sengchong_static_dir=BASE_DIR / "sengchong" / "static",
             sengchong_template_dir=BASE_DIR / "sengchong" / "templates",
             flask_secret_key=env(

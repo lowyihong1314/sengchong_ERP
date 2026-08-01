@@ -1,5 +1,7 @@
 from flask import Flask
 
+from models import db
+
 from .config import Settings
 from .routes.api import api_bp
 from .routes.frontend import frontend_bp
@@ -25,6 +27,14 @@ def create_app():
     )
     app.secret_key = settings.flask_secret_key
     app.config["SETTINGS"] = settings
+
+    # ORM layer. Schema changes go through Alembic (see migrations/), never
+    # through create_all(). The raw-sqlite3 ErpDatabase below still serves the
+    # DAOs that have not been ported yet; both talk to the same file.
+    app.config["SQLALCHEMY_DATABASE_URI"] = settings.database_url
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(app)
+
     erp_db = ErpDatabase(settings.erp_db_path)
     erp_db.initialize()
     app.extensions["erp_db"] = erp_db

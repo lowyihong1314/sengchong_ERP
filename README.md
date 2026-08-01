@@ -23,6 +23,54 @@ Copy `.env.example` to `.env` and put the workstation AutoCount SQL connection t
 cp .env.example .env
 ```
 
+## Backend Structure
+
+```text
+run.py            entry point; gunicorn serves run:app
+models/           SQLAlchemy models, one module per domain
+  __init__.py       db = SQLAlchemy()
+  user_data.py      ErpUser
+  sessions.py       ErpSession
+  project_data.py   ErpProject, ErpProjectDocument
+  project_photos.py ErpProjectPhoto
+  sengchong_content.py  SengchongService/Contact/Setting, ErpWebsiteAuditLog
+function/         the app package
+  __init__.py       create_app()
+  config.py         Settings.from_env()
+  routes/           blueprints
+  services/         AutoCount SDK bridge, SQL reader, ERP data stores
+migrations/       Alembic; baseline revision 8cc3e9a9bd3f
+```
+
+`models/<name>.py` and `function/services/<name>.py` are deliberately named in
+pairs: the model file describes the table, the service file holds the logic.
+
+### Database
+
+ERP-owned data lives in `erp_data.db` (SQLite today, Postgres later). AutoCount's
+own SQL Server databases are never touched by this layer -- they are read through
+`function/services/sql_reader.py` and written through the AutoCount SDK.
+
+The engine is chosen by one environment variable, read in `function/config.py`
+and reused by `migrations/env.py`:
+
+```bash
+DATABASE_URL=                                        # empty -> local sqlite file
+DATABASE_URL=postgresql+psycopg://user:pass@host/erp  # the eventual target
+```
+
+Schema changes go through Alembic, never through `create_all()`:
+
+```bash
+python3 -m alembic revision --autogenerate -m "add project milestone label"
+python3 -m alembic upgrade head
+python3 -m alembic current
+python3 -m alembic downgrade -1
+```
+
+See `docs/postgres-migration.md` for the column types that should be tightened
+before the Postgres cutover.
+
 ## Frontend Structure
 
 ```text
