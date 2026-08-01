@@ -2,6 +2,9 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from models import db
+from models.project_data import ErpProject, ErpProjectDocument
+
 
 SERVICE_CATEGORIES = (
     "电视机橱",
@@ -123,9 +126,13 @@ def _string_or_empty(value):
 
 
 class ProjectDataStore:
-    def __init__(self, db):
-        self.db = db
-        self.db.initialize()
+    """
+    The ERP-owned project/job layer.
+
+    A project groups the AutoCount documents raised for one customer job. The
+    document links live in erp_project_documents and are matched by document
+    number, so nothing here writes to AutoCount.
+    """
 
     def meta(self):
         return {
@@ -135,114 +142,90 @@ class ProjectDataStore:
         }
 
     def list_projects(self, company):
-        company = _normalize_company(company)
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT *
-                FROM erp_projects
-                WHERE company = ?
-                ORDER BY updated_at DESC
-                """,
-                (company,),
-            ).fetchall()
-            return [self._public_project(conn, row) for row in rows]
+        projects = db.session.scalars(
+            db.select(ErpProject)
+            .where(ErpProject.company == _normalize_company(company))
+            .order_by(ErpProject.updated_at.desc())
+        )
+        return [self._public_project(project) for project in projects]
 
     def get_project(self, company, project_key):
-        company = _normalize_company(company)
-        target = str(project_key or "").strip()
-        with self.db.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT *
-                FROM erp_projects
-                WHERE company = ? AND (id = ? OR project_code = ?)
-                """,
-                (company, target, target),
-            ).fetchone()
-            return self._public_project(conn, row) if row else None
+        project = self._find(company, project_key)
+        return self._public_project(project) if project else None
 
     def create_project(self, company, username, payload):
         company = _normalize_company(company)
         if not company:
             raise ValueError("Company is required.")
 
-        project, documents = self._normalize_payload(payload, apply_defaults=True)
-        if not project.get("title"):
+        fields, documents = self._normalize_payload(payload, apply_defaults=True)
+        if not fields.get("title"):
             raise ValueError("Project title is required.")
 
         now = _now_iso()
-        project_id = uuid.uuid4().hex
-        with self.db.transaction() as conn:
-            project_code = project.get("projectCode") or self._next_project_code(conn, company)
-            self._ensure_unique_project_code(conn, company, project_code)
-            conn.execute(
-                """
-                INSERT INTO erp_projects (
-                    id, company, project_code, title, debtor_code, debtor_name, contact_person,
-                    phone, site_address, service_category, status, expected_install_date,
-                    completion_date, quoted_total, collected_total, outstanding_amount,
-                    estimated_cost, actual_cost, notes, created_at, updated_at, created_by, updated_by
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                self._project_insert_values(
-                    project_id,
-                    company,
-                    project_code,
-                    project,
-                    now,
-                    username or "",
-                ),
-            )
-            self._replace_documents(conn, project_id, documents)
-            row = conn.execute("SELECT * FROM erp_projects WHERE id = ?", (project_id,)).fetchone()
-            return self._public_project(conn, row)
+        project_code = fields.get("projectCode") or self._next_project_code(company)
+        self._ensure_unique_project_code(company, project_code)
+
+        project = ErpProject(
+            id=uuid.uuid4().hex,
+            company=company,
+            project_code=project_code,
+            title=fields.get("title") or "",
+            debtor_code=fields.get("debtorCode") or "",
+            debtor_name=fields.get("debtorName") or "",
+            contact_person=fields.get("contactPerson") or "",
+            phone=fields.get("phone") or "",
+            site_address=fields.get("siteAddress") or "",
+            service_category=fields.get("serviceCategory") or SERVICE_CATEGORIES[0],
+            status=fields.get("status") or "Lead",
+            expected_install_date=fields.get("expectedInstallDate") or "",
+            completion_date=fields.get("completionDate") or "",
+            quoted_total=fields.get("quotedTotal"),
+            collected_total=fields.get("collectedTotal"),
+            outstanding_amount=fields.get("outstandingAmount"),
+            estimated_cost=fields.get("estimatedCost"),
+            actual_cost=fields.get("actualCost"),
+            notes=fields.get("notes") or "",
+            created_at=now,
+            updated_at=now,
+            created_by=username or "",
+            updated_by=username or "",
+        )
+        db.session.add(project)
+        db.session.flush()
+
+        self._replace_documents(project.id, documents)
+        db.session.commit()
+
+        return self._public_project(project)
 
     def update_project(self, company, project_key, username, payload):
         company = _normalize_company(company)
-        target = str(project_key or "").strip()
-        project, documents = self._normalize_payload(payload)
+        fields, documents = self._normalize_payload(payload)
 
-        with self.db.transaction() as conn:
-            existing = conn.execute(
-                """
-                SELECT *
-                FROM erp_projects
-                WHERE company = ? AND (id = ? OR project_code = ?)
-                """,
-                (company, target, target),
-            ).fetchone()
-            if not existing:
-                return None
+        project = self._find(company, project_key)
+        if not project:
+            return None
 
-            next_code = project.get("projectCode") or existing["project_code"]
-            if _normalize_key(next_code) != _normalize_key(existing["project_code"]):
-                self._ensure_unique_project_code(conn, company, next_code, exclude_id=existing["id"])
+        next_code = fields.get("projectCode") or project.project_code
+        if _normalize_key(next_code) != _normalize_key(project.project_code):
+            self._ensure_unique_project_code(company, next_code, exclude_id=project.id)
 
-            assignments = []
-            values = []
-            for api_field, column in PROJECT_COLUMNS.items():
-                if api_field == "projectCode":
-                    assignments.append("project_code = ?")
-                    values.append(next_code)
-                    continue
-                if api_field not in project:
-                    continue
-                assignments.append(f"{column} = ?")
-                values.append(project[api_field])
+        # project_code is always written back, the rest only when supplied.
+        project.project_code = next_code
+        for api_field, column in PROJECT_COLUMNS.items():
+            if api_field == "projectCode" or api_field not in fields:
+                continue
+            setattr(project, column, fields[api_field])
 
-            assignments.extend(["updated_at = ?", "updated_by = ?"])
-            values.extend([_now_iso(), username or ""])
-            values.append(existing["id"])
-            conn.execute(
-                f"UPDATE erp_projects SET {', '.join(assignments)} WHERE id = ?",
-                values,
-            )
-            if documents:
-                self._replace_documents(conn, existing["id"], documents)
-            row = conn.execute("SELECT * FROM erp_projects WHERE id = ?", (existing["id"],)).fetchone()
-            return self._public_project(conn, row)
+        project.updated_at = _now_iso()
+        project.updated_by = username or ""
+
+        if documents:
+            self._replace_documents(project.id, documents)
+
+        db.session.commit()
+        return self._public_project(project)
 
     def find_by_document(self, company, module, document_key):
         company = _normalize_company(company)
@@ -251,18 +234,18 @@ class ProjectDataStore:
         if not target or module not in DOCUMENT_MODULE_FIELDS:
             return []
 
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT p.*
-                FROM erp_projects p
-                JOIN erp_project_documents d ON d.project_id = p.id
-                WHERE p.company = ? AND d.module = ? AND LOWER(d.doc_no) = LOWER(?)
-                ORDER BY p.updated_at DESC
-                """,
-                (company, module, target),
-            ).fetchall()
-            return [self._public_project(conn, row) for row in rows]
+        projects = db.session.scalars(
+            db.select(ErpProject)
+            .join(ErpProjectDocument, ErpProjectDocument.project_id == ErpProject.id)
+            .where(
+                ErpProject.company == company,
+                ErpProjectDocument.module == module,
+                db.func.lower(ErpProjectDocument.doc_no) == db.func.lower(target),
+            )
+            .distinct()
+            .order_by(ErpProject.updated_at.desc())
+        )
+        return [self._public_project(project) for project in projects]
 
     def linked_document_keys(self, company, modules=None):
         company = _normalize_company(company)
@@ -271,22 +254,26 @@ class ProjectDataStore:
         if not modules:
             return set()
 
-        placeholders = ",".join("?" for _ in modules)
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT d.module, d.doc_no
-                FROM erp_project_documents d
-                JOIN erp_projects p ON p.id = d.project_id
-                WHERE p.company = ? AND d.module IN ({placeholders})
-                """,
-                (company, *modules),
-            ).fetchall()
-            return {
-                (str(row["module"] or "").strip(), _normalize_key(row["doc_no"]))
-                for row in rows
-                if row["module"] and row["doc_no"]
-            }
+        rows = db.session.execute(
+            db.select(ErpProjectDocument.module, ErpProjectDocument.doc_no)
+            .join(ErpProject, ErpProject.id == ErpProjectDocument.project_id)
+            .where(ErpProject.company == company, ErpProjectDocument.module.in_(modules))
+        )
+        return {
+            (str(module or "").strip(), _normalize_key(doc_no))
+            for module, doc_no in rows
+            if module and doc_no
+        }
+
+    def _find(self, company, project_key):
+        """A project is addressable by either its uuid or its project code."""
+        target = str(project_key or "").strip()
+        return db.session.scalars(
+            db.select(ErpProject).where(
+                ErpProject.company == _normalize_company(company),
+                db.or_(ErpProject.id == target, ErpProject.project_code == target),
+            )
+        ).first()
 
     def _normalize_payload(self, payload, apply_defaults=False):
         if not isinstance(payload, dict):
@@ -294,7 +281,7 @@ class ProjectDataStore:
 
         project = {}
         documents = {}
-        for api_field, column in PROJECT_COLUMNS.items():
+        for api_field in PROJECT_COLUMNS:
             if api_field not in payload:
                 continue
             value = payload.get(api_field)
@@ -315,117 +302,82 @@ class ProjectDataStore:
 
         return project, documents
 
-    def _project_insert_values(self, project_id, company, project_code, project, now, username):
-        return (
-            project_id,
-            company,
-            project_code,
-            project.get("title") or "",
-            project.get("debtorCode") or "",
-            project.get("debtorName") or "",
-            project.get("contactPerson") or "",
-            project.get("phone") or "",
-            project.get("siteAddress") or "",
-            project.get("serviceCategory") or SERVICE_CATEGORIES[0],
-            project.get("status") or "Lead",
-            project.get("expectedInstallDate") or "",
-            project.get("completionDate") or "",
-            project.get("quotedTotal"),
-            project.get("collectedTotal"),
-            project.get("outstandingAmount"),
-            project.get("estimatedCost"),
-            project.get("actualCost"),
-            project.get("notes") or "",
-            now,
-            now,
-            username,
-            username,
-        )
-
-    def _replace_documents(self, conn, project_id, documents):
+    def _replace_documents(self, project_id, documents):
+        """Replace the links for exactly the modules named in `documents`."""
         if not documents:
             return
 
-        modules = list(documents)
-        placeholders = ",".join("?" for _ in modules)
-        conn.execute(
-            f"DELETE FROM erp_project_documents WHERE project_id = ? AND module IN ({placeholders})",
-            [project_id, *modules],
+        db.session.execute(
+            db.delete(ErpProjectDocument).where(
+                ErpProjectDocument.project_id == project_id,
+                ErpProjectDocument.module.in_(list(documents)),
+            )
         )
         for module, doc_nos in documents.items():
             for doc_no in doc_nos:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO erp_project_documents (project_id, module, doc_no)
-                    VALUES (?, ?, ?)
-                    """,
-                    (project_id, module, doc_no),
+                db.session.add(
+                    ErpProjectDocument(project_id=project_id, module=module, doc_no=doc_no)
                 )
+        db.session.flush()
 
-    def _next_project_code(self, conn, company):
+    def _next_project_code(self, company):
         prefix = datetime.now().strftime("JOB-%y%m")
-        rows = conn.execute(
-            """
-            SELECT project_code
-            FROM erp_projects
-            WHERE company = ? AND project_code LIKE ?
-            """,
-            (company, f"{prefix}-%"),
-        ).fetchall()
+        codes = db.session.scalars(
+            db.select(ErpProject.project_code).where(
+                ErpProject.company == company,
+                ErpProject.project_code.like(f"{prefix}-%"),
+            )
+        )
         pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$", re.IGNORECASE)
         current = 0
-        for row in rows:
-            match = pattern.match(row["project_code"] or "")
+        for code in codes:
+            match = pattern.match(code or "")
             if match:
                 current = max(current, int(match.group(1)))
         return f"{prefix}-{current + 1:03d}"
 
-    def _ensure_unique_project_code(self, conn, company, project_code, exclude_id=None):
+    def _ensure_unique_project_code(self, company, project_code, exclude_id=None):
         code = str(project_code or "").strip()
         if not code:
             raise ValueError("Project code is required.")
-        row = conn.execute(
-            """
-            SELECT id
-            FROM erp_projects
-            WHERE company = ? AND LOWER(project_code) = LOWER(?)
-            """,
-            (company, code),
-        ).fetchone()
-        if row and row["id"] != exclude_id:
+
+        clash = db.session.scalars(
+            db.select(ErpProject.id).where(
+                ErpProject.company == company,
+                db.func.lower(ErpProject.project_code) == db.func.lower(code),
+            )
+        ).first()
+        if clash and clash != exclude_id:
             raise ValueError(f"Project code already exists: {project_code}")
 
-    def _documents_by_module(self, conn, project_id):
-        rows = conn.execute(
-            """
-            SELECT module, doc_no
-            FROM erp_project_documents
-            WHERE project_id = ?
-            ORDER BY id
-            """,
-            (project_id,),
-        ).fetchall()
+    @staticmethod
+    def _documents_by_module(project_id):
+        rows = db.session.execute(
+            db.select(ErpProjectDocument.module, ErpProjectDocument.doc_no)
+            .where(ErpProjectDocument.project_id == project_id)
+            .order_by(ErpProjectDocument.id)
+        )
         documents = {}
-        for row in rows:
-            documents.setdefault(row["module"], []).append(row["doc_no"])
+        for module, doc_no in rows:
+            documents.setdefault(module, []).append(doc_no)
         return documents
 
-    def _public_project(self, conn, row):
-        documents = self._documents_by_module(conn, row["id"])
+    def _public_project(self, project):
+        documents = self._documents_by_module(project.id)
         quotations = documents.get("quotations", [])
         invoices = documents.get("invoices", [])
-        project = {
-            "id": row["id"],
-            "company": row["company"],
-            "projectCode": row["project_code"],
-            "title": row["title"],
-            "debtorCode": row["debtor_code"],
-            "debtorName": row["debtor_name"],
-            "contactPerson": row["contact_person"],
-            "phone": row["phone"],
-            "siteAddress": row["site_address"],
-            "serviceCategory": row["service_category"],
-            "status": row["status"],
+        payload = {
+            "id": project.id,
+            "company": project.company,
+            "projectCode": project.project_code,
+            "title": project.title,
+            "debtorCode": project.debtor_code,
+            "debtorName": project.debtor_name,
+            "contactPerson": project.contact_person,
+            "phone": project.phone,
+            "siteAddress": project.site_address,
+            "serviceCategory": project.service_category,
+            "status": project.status,
             "quotationDocNo": (quotations or [""])[0],
             "quotationDocNos": quotations,
             "quotationDocNosText": ", ".join(quotations),
@@ -438,24 +390,24 @@ class ProjectDataStore:
             "arPaymentDocNosText": ", ".join(documents.get("ar-payments", [])),
             "apInvoiceDocNos": documents.get("ap-invoices", []),
             "apInvoiceDocNosText": ", ".join(documents.get("ap-invoices", [])),
-            "expectedInstallDate": row["expected_install_date"],
-            "completionDate": row["completion_date"],
-            "quotedTotal": _number_or_empty(row["quoted_total"]),
-            "collectedTotal": _number_or_empty(row["collected_total"]),
-            "outstandingAmount": _number_or_empty(row["outstanding_amount"]),
-            "estimatedCost": _number_or_empty(row["estimated_cost"]),
-            "actualCost": _number_or_empty(row["actual_cost"]),
-            "notes": row["notes"],
-            "createdAt": row["created_at"],
-            "updatedAt": row["updated_at"],
-            "createdBy": row["created_by"],
-            "updatedBy": row["updated_by"],
+            "expectedInstallDate": project.expected_install_date,
+            "completionDate": project.completion_date,
+            "quotedTotal": _number_or_empty(project.quoted_total),
+            "collectedTotal": _number_or_empty(project.collected_total),
+            "outstandingAmount": _number_or_empty(project.outstanding_amount),
+            "estimatedCost": _number_or_empty(project.estimated_cost),
+            "actualCost": _number_or_empty(project.actual_cost),
+            "notes": project.notes,
+            "createdAt": project.created_at,
+            "updatedAt": project.updated_at,
+            "createdBy": project.created_by,
+            "updatedBy": project.updated_by,
         }
-        collected = row["collected_total"]
-        actual_cost = row["actual_cost"]
-        project["margin"] = (
+        collected = project.collected_total
+        actual_cost = project.actual_cost
+        payload["margin"] = (
             round(collected - actual_cost, 2)
             if collected is not None and actual_cost is not None
             else ""
         )
-        return project
+        return payload

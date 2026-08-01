@@ -6,6 +6,11 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from models import db
+from models.project_data import ErpProject
+from models.project_photos import ErpProjectPhoto
+from models.sengchong_content import ErpWebsiteAuditLog
+
 
 SERVICE_CATEGORIES = (
     "电视机橱",
@@ -43,14 +48,14 @@ def _string_or_empty(value):
 def _bool(value):
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _int_or_zero(value):
     try:
-        return int(value)
+        return int(str(value).strip())
     except (TypeError, ValueError):
         return 0
 
@@ -62,20 +67,90 @@ def _safe_segment(value, fallback):
 
 
 class ProjectPhotoStore:
-    def __init__(self, db, base_dir):
-        self.db = db
+    """
+    Project photos: the image files on disk plus their metadata rows.
+
+    Publishing is deliberately two-flag: a photo must be both is_public and
+    website_visible before sengchong.com may render it, and every flag change
+    is written to the website audit log.
+    """
+
+    def __init__(self, base_dir):
         self.base_dir = Path(base_dir)
         self.photo_root = self.base_dir / "var" / "project-photos"
-        self.db.initialize()
+
+    # ------------------------------------------------------------------ reads
 
     def list_photos(self, company, project_key):
+        project = self._get_project(_normalize_company(company), project_key)
+        if not project:
+            return None
+        return [self._photo_payload(photo) for photo in self._photos_for_project(project.id)]
+
+    def file_path(self, photo_id, *, company=None, public_only=False, thumbnail=False):
+        photo = (
+            self._get_photo(_normalize_company(company), photo_id)
+            if company
+            else self._get_photo_by_id(photo_id)
+        )
+        if not photo:
+            return None
+        if public_only and (not photo.is_public or not photo.website_visible):
+            return None
+
+        relative_path = photo.thumbnail_path if thumbnail and photo.thumbnail_path else photo.stored_path
+        path = self.base_dir / relative_path
+        return path if path.exists() else None
+
+    def public_gallery(self, company):
         company = _normalize_company(company)
-        with self.db.connect() as conn:
-            project = self._get_project(conn, company, project_key)
-            if not project:
-                return None
-            rows = self._photo_rows_for_project(conn, project["id"])
-            return [self._photo_payload(row) for row in rows]
+        query = (
+            db.select(ErpProjectPhoto)
+            .join(ErpProject, ErpProject.id == ErpProjectPhoto.project_id)
+            .where(ErpProjectPhoto.is_public == 1, ErpProjectPhoto.website_visible == 1)
+        )
+        # An empty company means "every company", used by the public site.
+        if company:
+            query = query.where(ErpProjectPhoto.company == company)
+        query = query.order_by(
+            ErpProjectPhoto.is_cover.desc(),
+            ErpProjectPhoto.sort_order.asc(),
+            ErpProjectPhoto.created_at.desc(),
+        )
+        return [self._photo_payload(photo, public=True) for photo in db.session.scalars(query)]
+
+    def website_gallery(self, company):
+        rows = db.session.execute(
+            db.select(ErpProjectPhoto, ErpProject)
+            .join(ErpProject, ErpProject.id == ErpProjectPhoto.project_id)
+            .where(ErpProjectPhoto.company == _normalize_company(company))
+            .order_by(
+                ErpProjectPhoto.website_visible.desc(),
+                ErpProjectPhoto.is_public.desc(),
+                ErpProjectPhoto.is_cover.desc(),
+                ErpProjectPhoto.sort_order.asc(),
+                ErpProjectPhoto.created_at.desc(),
+            )
+        )
+        photos = [self._gallery_photo_payload(photo, project) for photo, project in rows]
+        return {
+            "data": photos,
+            "count": len(photos),
+            "publicCount": sum(1 for photo in photos if photo["isPublic"]),
+            "websiteVisibleCount": sum(1 for photo in photos if photo["websiteVisible"]),
+        }
+
+    def website_audit_log(self, company, limit=80):
+        limit = max(1, min(_int_or_zero(limit) or 80, 200))
+        entries = db.session.scalars(
+            db.select(ErpWebsiteAuditLog)
+            .where(ErpWebsiteAuditLog.company == _normalize_company(company))
+            .order_by(ErpWebsiteAuditLog.id.desc())
+            .limit(limit)
+        )
+        return {"data": [self._audit_payload(entry) for entry in entries]}
+
+    # ----------------------------------------------------------------- writes
 
     def add_photos(self, company, project_key, username, files, payload):
         company = _normalize_company(company)
@@ -87,65 +162,45 @@ class ProjectPhotoStore:
         if website_visible and not is_public:
             raise ValueError("Website visible photos must also be public.")
 
-        with self.db.transaction() as conn:
-            project = self._get_project(conn, company, project_key)
-            if not project:
-                return None
+        project = self._get_project(company, project_key)
+        if not project:
+            return None
 
-            existing_count = conn.execute(
-                "SELECT COUNT(*) AS total FROM erp_project_photos WHERE project_id = ?",
-                (project["id"],),
-            ).fetchone()["total"]
-            saved_rows = []
-            for index, uploaded_file in enumerate(files):
-                photo_id = uuid.uuid4().hex
-                stored_path, thumbnail_path = self._save_image(
-                    company,
-                    project["project_code"],
-                    photo_id,
-                    uploaded_file,
-                )
-                now = _now_iso()
-                is_cover = 1 if existing_count == 0 and index == 0 else 0
-                sort_order = _int_or_zero(payload.get("sortOrder")) or existing_count + index + 1
-                conn.execute(
-                    """
-                    INSERT INTO erp_project_photos (
-                        id, project_id, company, stored_path, thumbnail_path, content_type,
-                        original_filename, service_category, caption, alt_text,
-                        is_public, website_visible, is_cover, sort_order,
-                        created_at, updated_at, uploaded_by, updated_by
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        photo_id,
-                        project["id"],
-                        company,
-                        stored_path,
-                        thumbnail_path,
-                        "image/jpeg",
-                        _string_or_empty(uploaded_file.filename),
-                        _string_or_empty(payload.get("serviceCategory")),
-                        _string_or_empty(payload.get("caption")),
-                        _string_or_empty(payload.get("altText")),
-                        1 if is_public else 0,
-                        1 if website_visible else 0,
-                        is_cover,
-                        sort_order,
-                        now,
-                        now,
-                        username or "",
-                        username or "",
-                    ),
-                )
-                row = conn.execute(
-                    "SELECT * FROM erp_project_photos WHERE id = ?",
-                    (photo_id,),
-                ).fetchone()
-                saved_rows.append(self._photo_payload(row))
+        existing_count = self._photo_count(project.id)
+        saved = []
+        for index, uploaded_file in enumerate(files):
+            photo_id = uuid.uuid4().hex
+            stored_path, thumbnail_path = self._save_image(
+                company, project.project_code, photo_id, uploaded_file
+            )
+            now = _now_iso()
+            photo = ErpProjectPhoto(
+                id=photo_id,
+                project_id=project.id,
+                company=company,
+                stored_path=stored_path,
+                thumbnail_path=thumbnail_path,
+                content_type="image/jpeg",
+                original_filename=_string_or_empty(uploaded_file.filename),
+                service_category=_string_or_empty(payload.get("serviceCategory")),
+                caption=_string_or_empty(payload.get("caption")),
+                alt_text=_string_or_empty(payload.get("altText")),
+                is_public=1 if is_public else 0,
+                website_visible=1 if website_visible else 0,
+                # The first photo of an empty project becomes the cover.
+                is_cover=1 if existing_count == 0 and index == 0 else 0,
+                sort_order=_int_or_zero(payload.get("sortOrder")) or existing_count + index + 1,
+                created_at=now,
+                updated_at=now,
+                uploaded_by=username or "",
+                updated_by=username or "",
+            )
+            db.session.add(photo)
+            db.session.flush()
+            saved.append(self._photo_payload(photo))
 
-            return saved_rows
+        db.session.commit()
+        return saved
 
     def update_photo(self, company, photo_id, username, payload):
         company = _normalize_company(company)
@@ -153,216 +208,121 @@ class ProjectPhotoStore:
         if not photo_id:
             raise ValueError("Photo id is required.")
 
-        with self.db.transaction() as conn:
-            existing = self._get_photo(conn, company, photo_id)
-            if not existing:
-                return None
-            project_code = self._project_code_for_photo(conn, existing)
+        photo = self._get_photo(company, photo_id)
+        if not photo:
+            return None
+        project_code = self._project_code_for_photo(photo)
 
-            updates = []
-            values = []
-            audit_entries = []
-            for api_field, column in TEXT_FIELDS.items():
-                if api_field in payload:
-                    next_value = _string_or_empty(payload.get(api_field))
-                    updates.append(f"{column} = ?")
-                    values.append(next_value)
-                    self._append_audit_if_changed(
-                        audit_entries,
-                        "photo_metadata_changed",
-                        api_field,
-                        existing[column],
-                        next_value,
-                    )
+        changed = False
+        audit_entries = []
 
-            current_public = bool(existing["is_public"])
-            current_visible = bool(existing["website_visible"])
-            next_public = _bool(payload.get("isPublic")) if "isPublic" in payload else current_public
-            next_visible = (
-                _bool(payload.get("websiteVisible"))
-                if "websiteVisible" in payload
-                else current_visible
+        for api_field, column in TEXT_FIELDS.items():
+            if api_field in payload:
+                next_value = _string_or_empty(payload.get(api_field))
+                self._append_audit_if_changed(
+                    audit_entries, "photo_metadata_changed", api_field,
+                    getattr(photo, column), next_value,
+                )
+                setattr(photo, column, next_value)
+                changed = True
+
+        current_public = bool(photo.is_public)
+        current_visible = bool(photo.website_visible)
+        next_public = _bool(payload.get("isPublic")) if "isPublic" in payload else current_public
+        next_visible = (
+            _bool(payload.get("websiteVisible")) if "websiteVisible" in payload else current_visible
+        )
+        # Turning a photo private also pulls it off the website, unless the
+        # caller said otherwise in the same request.
+        if "isPublic" in payload and not next_public and "websiteVisible" not in payload:
+            next_visible = False
+        if next_visible and not next_public:
+            raise ValueError("Website visible photos must also be public.")
+
+        if "isPublic" in payload:
+            self._append_audit_if_changed(
+                audit_entries,
+                "photo_public_enabled" if next_public else "photo_public_disabled",
+                "isPublic", current_public, next_public,
             )
-            if "isPublic" in payload and not next_public and "websiteVisible" not in payload:
-                next_visible = False
-            if next_visible and not next_public:
-                raise ValueError("Website visible photos must also be public.")
+            photo.is_public = 1 if next_public else 0
+            changed = True
 
-            if "isPublic" in payload:
-                updates.append("is_public = ?")
-                values.append(1 if next_public else 0)
+            if not next_public and "websiteVisible" not in payload:
                 self._append_audit_if_changed(
-                    audit_entries,
-                    "photo_public_enabled" if next_public else "photo_public_disabled",
-                    "isPublic",
-                    current_public,
-                    next_public,
+                    audit_entries, "photo_website_hidden", "websiteVisible", current_visible, False
                 )
-                if not next_public and "websiteVisible" not in payload:
-                    updates.append("website_visible = ?")
-                    values.append(0)
-                    self._append_audit_if_changed(
-                        audit_entries,
-                        "photo_website_hidden",
-                        "websiteVisible",
-                        current_visible,
-                        False,
-                    )
+                photo.website_visible = 0
 
-            if "websiteVisible" in payload:
-                updates.append("website_visible = ?")
-                values.append(1 if next_visible else 0)
-                self._append_audit_if_changed(
-                    audit_entries,
-                    "photo_website_published" if next_visible else "photo_website_hidden",
-                    "websiteVisible",
-                    current_visible,
-                    next_visible,
-                )
-
-            if "sortOrder" in payload:
-                next_sort_order = _int_or_zero(payload.get("sortOrder"))
-                updates.append("sort_order = ?")
-                values.append(next_sort_order)
-                self._append_audit_if_changed(
-                    audit_entries,
-                    "photo_sort_changed",
-                    "sortOrder",
-                    existing["sort_order"],
-                    next_sort_order,
-                )
-
-            if "isCover" in payload:
-                is_cover = _bool(payload.get("isCover"))
-                if is_cover:
-                    conn.execute(
-                        "UPDATE erp_project_photos SET is_cover = 0 WHERE project_id = ?",
-                        (existing["project_id"],),
-                    )
-                updates.append("is_cover = ?")
-                values.append(1 if is_cover else 0)
-                self._append_audit_if_changed(
-                    audit_entries,
-                    "photo_cover_changed",
-                    "isCover",
-                    bool(existing["is_cover"]),
-                    is_cover,
-                )
-
-            if not updates:
-                return self._photo_payload(existing)
-
-            updates.extend(["updated_at = ?", "updated_by = ?"])
-            values.extend([_now_iso(), username or "", photo_id])
-            conn.execute(
-                f"UPDATE erp_project_photos SET {', '.join(updates)} WHERE id = ?",
-                values,
+        if "websiteVisible" in payload:
+            self._append_audit_if_changed(
+                audit_entries,
+                "photo_website_published" if next_visible else "photo_website_hidden",
+                "websiteVisible", current_visible, next_visible,
             )
-            for audit_entry in audit_entries:
-                self._insert_audit(
-                    conn,
-                    company,
-                    username,
-                    audit_entry["action"],
-                    "project_photo",
-                    photo_id,
-                    project_code,
-                    audit_entry["fieldName"],
-                    audit_entry["oldValue"],
-                    audit_entry["newValue"],
+            photo.website_visible = 1 if next_visible else 0
+            changed = True
+
+        if "sortOrder" in payload:
+            next_sort_order = _int_or_zero(payload.get("sortOrder"))
+            self._append_audit_if_changed(
+                audit_entries, "photo_sort_changed", "sortOrder", photo.sort_order, next_sort_order
+            )
+            photo.sort_order = next_sort_order
+            changed = True
+
+        if "isCover" in payload:
+            is_cover = _bool(payload.get("isCover"))
+            # Read the old flag before the bulk clear below overwrites it,
+            # otherwise the audit entry always compares against 0.
+            current_cover = bool(photo.is_cover)
+            if is_cover:
+                # Only one cover per project. This clears the *other* photos;
+                # clearing this one too would leave the session thinking
+                # is_cover is unchanged, so the assignment below would emit no
+                # UPDATE and the row would keep the cleared value.
+                db.session.execute(
+                    db.update(ErpProjectPhoto)
+                    .where(
+                        ErpProjectPhoto.project_id == photo.project_id,
+                        ErpProjectPhoto.id != photo.id,
+                    )
+                    .values(is_cover=0),
+                    execution_options={"synchronize_session": False},
                 )
-            row = conn.execute("SELECT * FROM erp_project_photos WHERE id = ?", (photo_id,)).fetchone()
-            return self._photo_payload(row)
+            self._append_audit_if_changed(
+                audit_entries, "photo_cover_changed", "isCover", current_cover, is_cover
+            )
+            photo.is_cover = 1 if is_cover else 0
+            changed = True
+
+        if not changed:
+            return self._photo_payload(photo)
+
+        photo.updated_at = _now_iso()
+        photo.updated_by = username or ""
+        for entry in audit_entries:
+            self._insert_audit(
+                company, username, entry["action"], "project_photo", photo_id,
+                project_code, entry["fieldName"], entry["oldValue"], entry["newValue"],
+            )
+
+        db.session.commit()
+        return self._photo_payload(photo)
 
     def delete_photo(self, company, photo_id):
-        company = _normalize_company(company)
-        with self.db.transaction() as conn:
-            row = self._get_photo(conn, company, photo_id)
-            if not row:
-                return None
-            conn.execute("DELETE FROM erp_project_photos WHERE id = ?", (row["id"],))
+        photo = self._get_photo(_normalize_company(company), photo_id)
+        if not photo:
+            return None
 
-        self._delete_file(row["stored_path"])
-        self._delete_file(row["thumbnail_path"])
-        return self._photo_payload(row)
+        payload = self._photo_payload(photo)
+        stored_path, thumbnail_path = photo.stored_path, photo.thumbnail_path
+        db.session.delete(photo)
+        db.session.commit()
 
-    def file_path(self, photo_id, *, company=None, public_only=False, thumbnail=False):
-        with self.db.connect() as conn:
-            row = self._get_photo(conn, _normalize_company(company), photo_id) if company else self._get_photo_by_id(conn, photo_id)
-            if not row:
-                return None
-            if public_only and (not row["is_public"] or not row["website_visible"]):
-                return None
-            relative_path = row["thumbnail_path"] if thumbnail and row["thumbnail_path"] else row["stored_path"]
-            path = self.base_dir / relative_path
-            return path if path.exists() else None
-
-    def public_gallery(self, company):
-        company = _normalize_company(company)
-        company_filter = "AND ph.company = ?" if company else ""
-        params = (company,) if company else ()
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT ph.*
-                FROM erp_project_photos ph
-                JOIN erp_projects p ON p.id = ph.project_id
-                WHERE ph.is_public = 1
-                  AND ph.website_visible = 1
-                  {company_filter}
-                ORDER BY ph.is_cover DESC, ph.sort_order ASC, ph.created_at DESC
-                """,
-                params,
-            ).fetchall()
-            return [self._photo_payload(row, public=True) for row in rows]
-
-    def website_gallery(self, company):
-        company = _normalize_company(company)
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    ph.*,
-                    p.project_code AS project_code,
-                    p.title AS project_title,
-                    p.service_category AS project_service_category,
-                    p.status AS project_status,
-                    p.debtor_name AS project_debtor_name
-                FROM erp_project_photos ph
-                JOIN erp_projects p ON p.id = ph.project_id
-                WHERE ph.company = ?
-                ORDER BY
-                    ph.website_visible DESC,
-                    ph.is_public DESC,
-                    ph.is_cover DESC,
-                    ph.sort_order ASC,
-                    ph.created_at DESC
-                """,
-                (company,),
-            ).fetchall()
-            photos = [self._gallery_photo_payload(row) for row in rows]
-            return {
-                "data": photos,
-                "count": len(photos),
-                "publicCount": sum(1 for photo in photos if photo["isPublic"]),
-                "websiteVisibleCount": sum(1 for photo in photos if photo["websiteVisible"]),
-            }
-
-    def website_audit_log(self, company, limit=80):
-        company = _normalize_company(company)
-        limit = max(1, min(_int_or_zero(limit) or 80, 200))
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT *
-                FROM erp_website_audit_log
-                WHERE company = ?
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (company, limit),
-            ).fetchall()
-            return {"data": [self._audit_payload(row) for row in rows]}
+        self._delete_file(stored_path)
+        self._delete_file(thumbnail_path)
+        return payload
 
     def import_legacy_product_images(self, company, username, source_dir):
         company = _normalize_company(company)
@@ -385,163 +345,136 @@ class ProjectPhotoStore:
                 "data": [],
             }
 
-        with self.db.transaction() as conn:
-            project = self._get_project(conn, company, "WEBSITE-GALLERY")
-            if not project:
-                project_id = uuid.uuid4().hex
-                now = _now_iso()
-                conn.execute(
-                    """
-                    INSERT INTO erp_projects (
-                        id, company, project_code, title, service_category, status,
-                        notes, created_at, updated_at, created_by, updated_by
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        project_id,
-                        company,
-                        "WEBSITE-GALLERY",
-                        "Website Gallery",
-                        "展示柜",
-                        "Completed",
-                        "Imported legacy sengchong.com product gallery images.",
-                        now,
-                        now,
-                        username or "",
-                        username or "",
-                    ),
+        project = self._get_project(company, "WEBSITE-GALLERY")
+        if not project:
+            now = _now_iso()
+            project = ErpProject(
+                id=uuid.uuid4().hex,
+                company=company,
+                project_code="WEBSITE-GALLERY",
+                title="Website Gallery",
+                service_category="展示柜",
+                status="Completed",
+                notes="Imported legacy sengchong.com product gallery images.",
+                created_at=now,
+                updated_at=now,
+                created_by=username or "",
+                updated_by=username or "",
+            )
+            db.session.add(project)
+            db.session.flush()
+
+        existing_filenames = {
+            (name or "").lower()
+            for name in db.session.scalars(
+                db.select(ErpProjectPhoto.original_filename).where(
+                    ErpProjectPhoto.project_id == project.id
                 )
-                project = self._get_project(conn, company, "WEBSITE-GALLERY")
+            )
+        }
+        existing_count = self._photo_count(project.id)
 
-            existing_filenames = {
-                row["original_filename"].lower()
-                for row in conn.execute(
-                    """
-                    SELECT original_filename
-                    FROM erp_project_photos
-                    WHERE project_id = ?
-                    """,
-                    (project["id"],),
-                ).fetchall()
-            }
-            existing_count = conn.execute(
-                "SELECT COUNT(*) AS total FROM erp_project_photos WHERE project_id = ?",
-                (project["id"],),
-            ).fetchone()["total"]
+        imported_rows = []
+        skipped_count = 0
+        for path in image_paths:
+            if path.name.lower() in existing_filenames:
+                skipped_count += 1
+                continue
 
-            imported_rows = []
-            skipped_count = 0
-            for path in image_paths:
-                if path.name.lower() in existing_filenames:
-                    skipped_count += 1
-                    continue
+            photo_id = uuid.uuid4().hex
+            stored_path, thumbnail_path = self._save_image_from_path(
+                company, project.project_code, photo_id, path
+            )
+            now = _now_iso()
+            photo = ErpProjectPhoto(
+                id=photo_id,
+                project_id=project.id,
+                company=company,
+                stored_path=stored_path,
+                thumbnail_path=thumbnail_path,
+                content_type="image/jpeg",
+                original_filename=path.name,
+                service_category=project.service_category or "展示柜",
+                caption="",
+                alt_text="",
+                is_public=1,
+                website_visible=1,
+                is_cover=1 if existing_count == 0 and len(imported_rows) == 0 else 0,
+                sort_order=_int_or_zero(path.stem) or existing_count + len(imported_rows) + 1,
+                created_at=now,
+                updated_at=now,
+                uploaded_by=username or "",
+                updated_by=username or "",
+            )
+            db.session.add(photo)
+            db.session.flush()
 
-                photo_id = uuid.uuid4().hex
-                stored_path, thumbnail_path = self._save_image_from_path(
-                    company,
-                    project["project_code"],
-                    photo_id,
-                    path,
-                )
-                now = _now_iso()
-                sort_order = _int_or_zero(path.stem) or existing_count + len(imported_rows) + 1
-                conn.execute(
-                    """
-                    INSERT INTO erp_project_photos (
-                        id, project_id, company, stored_path, thumbnail_path, content_type,
-                        original_filename, service_category, caption, alt_text,
-                        is_public, website_visible, is_cover, sort_order,
-                        created_at, updated_at, uploaded_by, updated_by
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        photo_id,
-                        project["id"],
-                        company,
-                        stored_path,
-                        thumbnail_path,
-                        "image/jpeg",
-                        path.name,
-                        project["service_category"] or "展示柜",
-                        "",
-                        "",
-                        1,
-                        1,
-                        1 if existing_count == 0 and len(imported_rows) == 0 else 0,
-                        sort_order,
-                        now,
-                        now,
-                        username or "",
-                        username or "",
-                    ),
-                )
-                row = conn.execute(
-                    "SELECT * FROM erp_project_photos WHERE id = ?",
-                    (photo_id,),
-                ).fetchone()
-                self._insert_audit(
-                    conn,
-                    company,
-                    username,
-                    "legacy_product_imported",
-                    "project_photo",
-                    photo_id,
-                    project["project_code"],
-                    "websiteVisible",
-                    "",
-                    "true",
-                )
-                imported_rows.append(self._photo_payload(row))
+            self._insert_audit(
+                company, username, "legacy_product_imported", "project_photo", photo_id,
+                project.project_code, "websiteVisible", "", "true",
+            )
+            imported_rows.append(self._photo_payload(photo))
 
-            return {
-                "projectCode": project["project_code"],
-                "importedCount": len(imported_rows),
-                "skippedCount": skipped_count,
-                "data": imported_rows,
-            }
+        result = {
+            "projectCode": project.project_code,
+            "importedCount": len(imported_rows),
+            "skippedCount": skipped_count,
+            "data": imported_rows,
+        }
+        db.session.commit()
+        return result
 
-    def _get_project(self, conn, company, project_key):
+    # ---------------------------------------------------------------- lookups
+
+    @staticmethod
+    def _get_project(company, project_key):
         target = str(project_key or "").strip()
-        return conn.execute(
-            """
-            SELECT *
-            FROM erp_projects
-            WHERE company = ? AND (id = ? OR project_code = ?)
-            """,
-            (company, target, target),
-        ).fetchone()
+        return db.session.scalars(
+            db.select(ErpProject).where(
+                ErpProject.company == company,
+                db.or_(ErpProject.id == target, ErpProject.project_code == target),
+            )
+        ).first()
 
-    def _get_photo(self, conn, company, photo_id):
-        return conn.execute(
-            "SELECT * FROM erp_project_photos WHERE company = ? AND id = ?",
-            (company, str(photo_id or "").strip()),
-        ).fetchone()
+    @staticmethod
+    def _get_photo(company, photo_id):
+        return db.session.scalars(
+            db.select(ErpProjectPhoto).where(
+                ErpProjectPhoto.company == company,
+                ErpProjectPhoto.id == str(photo_id or "").strip(),
+            )
+        ).first()
 
-    def _get_photo_by_id(self, conn, photo_id):
-        return conn.execute(
-            "SELECT * FROM erp_project_photos WHERE id = ?",
-            (str(photo_id or "").strip(),),
-        ).fetchone()
+    @staticmethod
+    def _get_photo_by_id(photo_id):
+        return db.session.get(ErpProjectPhoto, str(photo_id or "").strip())
 
-    def _project_code_for_photo(self, conn, photo):
-        row = conn.execute(
-            "SELECT project_code FROM erp_projects WHERE id = ?",
-            (photo["project_id"],),
-        ).fetchone()
-        return row["project_code"] if row else ""
+    @staticmethod
+    def _project_code_for_photo(photo):
+        project = db.session.get(ErpProject, photo.project_id)
+        return project.project_code if project else ""
 
-    def _photo_rows_for_project(self, conn, project_id):
-        return conn.execute(
-            """
-            SELECT *
-            FROM erp_project_photos
-            WHERE project_id = ?
-            ORDER BY is_cover DESC, sort_order ASC, created_at DESC
-            """,
-            (project_id,),
-        ).fetchall()
+    @staticmethod
+    def _photo_count(project_id):
+        return db.session.scalar(
+            db.select(db.func.count())
+            .select_from(ErpProjectPhoto)
+            .where(ErpProjectPhoto.project_id == project_id)
+        )
+
+    @staticmethod
+    def _photos_for_project(project_id):
+        return db.session.scalars(
+            db.select(ErpProjectPhoto)
+            .where(ErpProjectPhoto.project_id == project_id)
+            .order_by(
+                ErpProjectPhoto.is_cover.desc(),
+                ErpProjectPhoto.sort_order.asc(),
+                ErpProjectPhoto.created_at.desc(),
+            )
+        )
+
+    # ------------------------------------------------------------------ files
 
     def _save_image(self, company, project_code, photo_id, uploaded_file):
         project_dir = (
@@ -608,53 +541,54 @@ class ProjectPhotoStore:
         except OSError:
             pass
 
-    def _photo_payload(self, row, public=False):
+    # --------------------------------------------------------------- payloads
+
+    def _photo_payload(self, photo, public=False):
         payload = {
-            "id": row["id"],
-            "serviceCategory": row["service_category"],
-            "caption": row["caption"],
-            "altText": row["alt_text"],
-            "isPublic": bool(row["is_public"]),
-            "websiteVisible": bool(row["website_visible"]),
-            "isCover": bool(row["is_cover"]),
-            "sortOrder": row["sort_order"],
-            "thumbnailUrl": f"/public-api/project-photos/{row['id']}/file?size=thumbnail"
+            "id": photo.id,
+            "serviceCategory": photo.service_category,
+            "caption": photo.caption,
+            "altText": photo.alt_text,
+            "isPublic": bool(photo.is_public),
+            "websiteVisible": bool(photo.website_visible),
+            "isCover": bool(photo.is_cover),
+            "sortOrder": photo.sort_order,
+            "thumbnailUrl": f"/public-api/project-photos/{photo.id}/file?size=thumbnail"
             if public
-            else f"/api/project-photos/{row['id']}/file?size=thumbnail",
-            "fileUrl": f"/public-api/project-photos/{row['id']}/file"
+            else f"/api/project-photos/{photo.id}/file?size=thumbnail",
+            "fileUrl": f"/public-api/project-photos/{photo.id}/file"
             if public
-            else f"/api/project-photos/{row['id']}/file",
+            else f"/api/project-photos/{photo.id}/file",
         }
         if not public:
             payload.update(
                 {
-                    "company": row["company"],
-                    "projectId": row["project_id"],
-                    "originalFilename": row["original_filename"],
-                    "createdAt": row["created_at"],
-                    "updatedAt": row["updated_at"],
-                    "uploadedBy": row["uploaded_by"],
-                    "updatedBy": row["updated_by"],
+                    "company": photo.company,
+                    "projectId": photo.project_id,
+                    "originalFilename": photo.original_filename,
+                    "createdAt": photo.created_at,
+                    "updatedAt": photo.updated_at,
+                    "uploadedBy": photo.uploaded_by,
+                    "updatedBy": photo.updated_by,
                 }
             )
         return payload
 
-    def _gallery_photo_payload(self, row):
-        payload = self._photo_payload(row)
+    def _gallery_photo_payload(self, photo, project):
+        payload = self._photo_payload(photo)
         payload.update(
             {
-                "projectCode": row["project_code"],
-                "projectTitle": row["project_title"],
-                "projectServiceCategory": row["project_service_category"],
-                "projectStatus": row["project_status"],
-                "projectDebtorName": row["project_debtor_name"],
+                "projectCode": project.project_code,
+                "projectTitle": project.title,
+                "projectServiceCategory": project.service_category,
+                "projectStatus": project.status,
+                "projectDebtorName": project.debtor_name,
             }
         )
         return payload
 
     def _insert_audit(
         self,
-        conn,
         company,
         username,
         action,
@@ -665,26 +599,19 @@ class ProjectPhotoStore:
         old_value="",
         new_value="",
     ):
-        conn.execute(
-            """
-            INSERT INTO erp_website_audit_log (
-                company, action, entity_type, entity_id, project_code, field_name,
-                old_value, new_value, username, created_at
+        db.session.add(
+            ErpWebsiteAuditLog(
+                company=company,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                project_code=project_code or "",
+                field_name=field_name or "",
+                old_value=self._audit_value(old_value),
+                new_value=self._audit_value(new_value),
+                username=username or "",
+                created_at=_now_iso(),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                company,
-                action,
-                entity_type,
-                entity_id,
-                project_code or "",
-                field_name or "",
-                self._audit_value(old_value),
-                self._audit_value(new_value),
-                username or "",
-                _now_iso(),
-            ),
         )
 
     def _append_audit_if_changed(self, audit_entries, action, field_name, old_value, new_value):
@@ -712,17 +639,17 @@ class ProjectPhotoStore:
         return str(value)
 
     @staticmethod
-    def _audit_payload(row):
+    def _audit_payload(entry):
         return {
-            "id": row["id"],
-            "company": row["company"],
-            "action": row["action"],
-            "entityType": row["entity_type"],
-            "entityId": row["entity_id"],
-            "projectCode": row["project_code"],
-            "fieldName": row["field_name"],
-            "oldValue": row["old_value"],
-            "newValue": row["new_value"],
-            "username": row["username"],
-            "createdAt": row["created_at"],
+            "id": entry.id,
+            "company": entry.company,
+            "action": entry.action,
+            "entityType": entry.entity_type,
+            "entityId": entry.entity_id,
+            "projectCode": entry.project_code,
+            "fieldName": entry.field_name,
+            "oldValue": entry.old_value,
+            "newValue": entry.new_value,
+            "username": entry.username,
+            "createdAt": entry.created_at,
         }
