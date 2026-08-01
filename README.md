@@ -14,7 +14,7 @@ Flask verifies login through AutoCount SDK `UserSession.Login()` and reads the a
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
-python wsgi.py
+python run.py
 ```
 
 Copy `.env.example` to `.env` and put the workstation AutoCount SQL connection there. The Flask code uses those values only to create AutoCount SDK `DBSetting`; business reads still go through AutoCount SDK classes.
@@ -79,7 +79,7 @@ cd frontend
 npm install
 npm run build
 cd ..
-python wsgi.py
+python run.py
 ```
 
 After `npm run build`, Flask serves `frontend/dist` from:
@@ -94,7 +94,7 @@ The gateway is managed by a user-level systemd unit on port `5000`.
 
 - Service name: `erp-gateway.service`
 - Unit path: `~/.config/systemd/user/erp-gateway.service`
-- WSGI entry: `wsgi:app`
+- WSGI entry: `run:app`
 - Working directory: `/home/yukang/ERP`
 - Host/port: `0.0.0.0:5000`
 
@@ -118,7 +118,7 @@ Type=simple
 WorkingDirectory=/home/yukang/ERP
 Environment=PORT=5000
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/yukang/.local/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 wsgi:app
+ExecStart=/home/yukang/.local/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 run:app
 Restart=always
 RestartSec=5
 

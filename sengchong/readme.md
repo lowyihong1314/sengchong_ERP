@@ -2,8 +2,8 @@
 
 The Sengchong public website is now served by the ERP Flask app.
 
-- Single app factory: `erp_gateway.create_app()`
-- WSGI entry: `/home/yukang/ERP/wsgi.py`
+- Single app factory: `function.create_app()`
+- WSGI entry: `/home/yukang/ERP/run.py`
 - Port: `5000`
 - Auth: ERP users in `/home/yukang/ERP/erp_data.db`
 - Content data: ERP-owned SQLite tables in `/home/yukang/ERP/erp_data.db`
@@ -25,7 +25,7 @@ The Sengchong public website is now served by the ERP Flask app.
 
 ```bash
 cd /home/yukang/ERP
-PORT=5000 python3 wsgi.py
+PORT=5000 python3 run.py
 ```
 
 Production is handled by the ERP service:

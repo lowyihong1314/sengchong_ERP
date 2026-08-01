@@ -1,6 +1,6 @@
 # --- Secrets: never commit ---
 .env
-Domain/cloudflare_API.md
+dns_sync/cloudflare_API.md
 
 # --- ERP-owned data (real customer and accounting data) ---
 erp_data.db
