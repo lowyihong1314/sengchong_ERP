@@ -1377,7 +1377,7 @@ export function App() {
         applyItemToLine(active, line, line.itemCode, items)
       );
     }
-    const nextStatus = { tone: "", text: `${active.createLabel} ${active.singular}` };
+    const nextStatus = { tone: "", text: `New ${active.singular}` };
     setFormData(nextFormData);
     setView("new");
     setStatus(nextStatus);

@@ -266,6 +266,11 @@ export function getFormSummary(module, data) {
     ];
   }
 
+  // Master-data forms (employees, debtors, timesheet rows ...) have no lines
+  // and no document totals. Returning nothing keeps a row of zeroed
+  // Line Total / Discount / Tax / Grand Total off a form that has no money.
+  if (!module.lineFields?.length) return [];
+
   const lines = data?.lines || [];
   const currencyCode = getDocumentCurrency(data);
   const lineTotal = lines.reduce((sum, line) => sum + getFormLineGross(module, line), 0);

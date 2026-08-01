@@ -51,7 +51,7 @@ export function NewPage({
           <h2>
             {isEdit
               ? `Edit ${readValue(data, module.rowKey) || module.singular}`
-              : `${module.createLabel} ${module.singular}`}
+              : `New ${module.singular}`}
           </h2>
           <p>{module.meta}</p>
         </div>
@@ -66,7 +66,7 @@ export function NewPage({
 
       {showDebtor && <DebtorInfo debtor={debtorInfo} showEmpty />}
 
-      <div className="line-table-title">Header</div>
+      {module.lineFields.length > 0 && <div className="line-table-title">Header</div>}
       <div className="new-form-wrap">
         <div className="form-grid">
           {module.formFields.map((field) => {
@@ -167,7 +167,7 @@ export function NewPage({
         </section>
       )}
 
-      <TotalSummary items={summaryItems} />
+      {summaryItems.length > 0 && <TotalSummary items={summaryItems} />}
 
       {module.lineFields.length === 0 && (
         <div className="new-page-actions">
