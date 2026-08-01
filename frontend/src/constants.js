@@ -55,26 +55,31 @@ export const EMPLOYEE_POSITIONS = [
 ];
 export const EMPLOYEE_STATUSES = ["Active", "On Leave", "Resigned"];
 
-export const moduleKeys = [
-  "projects",
-  "quotations",
-  "invoices",
-  "ar-payments",
-  "ar-deposits",
-  "cash-book",
-  "bank-transactions",
-  "purchase-orders",
-  "ap-invoices",
-  "ap-payments",
-  "ap-deposits",
-  "items",
-  "debtors",
-  "creditors",
-  "rdp-allow",
-  "employees",
-  "user-management",
-  "website-content",
+// The sidebar is grouped; moduleKeys is derived so there is one source of
+// truth for "which module keys exist" (routing validates against it).
+export const MODULE_GROUPS = [
+  { key: "projects", label: "Projects", modules: ["projects"] },
+  {
+    key: "sales",
+    label: "Sales",
+    modules: ["quotations", "invoices", "ar-payments", "ar-deposits"],
+  },
+  {
+    key: "purchasing",
+    label: "Purchasing",
+    modules: ["purchase-orders", "ap-invoices", "ap-payments", "ap-deposits"],
+  },
+  { key: "banking", label: "Banking", modules: ["cash-book", "bank-transactions"] },
+  { key: "masters", label: "Masters", modules: ["items", "debtors", "creditors"] },
+  { key: "employees", label: "Employees", modules: ["employees"] },
+  {
+    key: "system",
+    label: "System",
+    modules: ["rdp-allow", "user-management", "website-content"],
+  },
 ];
+
+export const moduleKeys = MODULE_GROUPS.flatMap((group) => group.modules);
 
 export const COMPANY_DATABASES = [
   { value: "AED_SENG", label: "SENG CHONG INTERIOR DESIGN" },
