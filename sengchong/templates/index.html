@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}成昌家私{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+
+<div id="home_page_container">
+    <div class="poster">
+        <img src="{{ url_for('static', filename='images/bg.jpg') }}" alt="poster">
+        <div id="name">
+          <img src="{{ url_for('static', filename='images/logo/name.png') }}" alt="poster">
+        </div>
+    </div>
+    <h1 id="our-service" >我们的服务</h1>
+    <div class="photoGallery" id="service_gallery">
+        <div class="website-loading">Loading services...</div>
+    </div>
+    <div class="container contact-us py-5">
+        <h2 class="text-center mb-5">联络我们</h2>
+        <div class="row justify-content-center" id="contact_list">
+            <div class="website-loading">Loading contacts...</div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const serviceGallery = document.getElementById("service_gallery");
+    const contactList = document.getElementById("contact_list");
+
+    function clearElement(element) {
+        while (element && element.firstChild) {
+            element.removeChild(element.firstChild);
+        }
+    }
+
+    function renderServices(services) {
+        clearElement(serviceGallery);
+        if (!services.length) {
+            serviceGallery.innerHTML = '<div class="website-loading">No services</div>';
+            return;
+        }
+        services.forEach(function (service) {
+            const item = document.createElement("div");
+            item.className = "photo-item";
+
+            const image = document.createElement("img");
+            image.src = service.imageUrl || "/static/images/service/bg.jpg";
+            image.alt = service.serviceName || "Service";
+
+            const overlay = document.createElement("div");
+            overlay.className = "overlay";
+
+            const label = document.createElement("p");
+            label.textContent = service.serviceName || "";
+
+            overlay.appendChild(label);
+            item.appendChild(image);
+            item.appendChild(overlay);
+            serviceGallery.appendChild(item);
+        });
+    }
+
+    function renderContacts(contacts) {
+        clearElement(contactList);
+        if (!contacts.length) {
+            contactList.innerHTML = '<div class="website-loading">No contacts</div>';
+            return;
+        }
+        contacts.forEach(function (contact) {
+            const column = document.createElement("div");
+            column.className = "col-md-4 mb-4";
+
+            const card = document.createElement("div");
+            card.className = "card text-center";
+
+            const image = document.createElement("img");
+            image.src = contact.imageUrl || "/static/images/contact/bg.jpg";
+            image.alt = contact.name || "Contact";
+            image.className = "card-img-top rounded-circle mx-auto mt-3";
+            image.style.width = "100px";
+            image.style.height = "100px";
+
+            const body = document.createElement("div");
+            body.className = "card-body";
+
+            const name = document.createElement("h5");
+            name.className = "card-title";
+            name.textContent = contact.name || "";
+
+            const number = document.createElement("p");
+            number.className = "card-text";
+            number.textContent = contact.number ? "号码: " + contact.number : "";
+
+            body.appendChild(name);
+            body.appendChild(number);
+            card.appendChild(image);
+            card.appendChild(body);
+            column.appendChild(card);
+            contactList.appendChild(column);
+        });
+    }
+
+    window.loadSengchongWebsite()
+        .then(function (payload) {
+            renderServices(Array.isArray(payload.services) ? payload.services : []);
+            renderContacts(Array.isArray(payload.contacts) ? payload.contacts : []);
+        })
+        .catch(function (error) {
+            console.error("Error loading home content:", error);
+            if (serviceGallery) {
+                serviceGallery.innerHTML = '<div class="website-loading">Unable to load services</div>';
+            }
+            if (contactList) {
+                contactList.innerHTML = '<div class="website-loading">Unable to load contacts</div>';
+            }
+        });
+});
+</script>
+{% endblock %}

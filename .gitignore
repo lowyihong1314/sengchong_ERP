@@ -1,0 +1,30 @@
+# --- Secrets: never commit ---
+.env
+Domain/cloudflare_API.md
+
+# --- ERP-owned data (real customer and accounting data) ---
+erp_data.db
+erp_data.db.bak-*
+erp.sql
+sqlserver-backups/
+var/
+
+# --- Customer material ---
+Docs/whatsapp_chats/
+
+# --- Runtime / build output ---
+session_data.json
+session_data.json.lock
+.venv/
+__pycache__/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+.flask.log
+*.log
+
+# --- Local scratch ---
+*.bak-*
+.smoke/
+.ab/

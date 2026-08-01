@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}产品列表{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/products.css') }}">
+<div id="images_container"></div>
+
+<!-- 点击放大的图片弹窗 -->
+<div id="image_modal">
+    <span class="close-btn">&times;</span>
+    <img id="modal_img" src="" alt="Enlarged Image">
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const container = document.getElementById("images_container");
+    const modal = document.getElementById("image_modal");
+    const modalImage = document.getElementById("modal_img");
+
+    function generateCard(photo) {
+        const imageUrl = photo.thumbnailUrl || photo.fileUrl;
+        const fullUrl = photo.fileUrl || imageUrl;
+        const card = document.createElement("div");
+        card.classList.add("card");
+
+        const imgElement = document.createElement("img");
+        imgElement.src = imageUrl;
+        imgElement.alt = photo.altText || photo.caption || photo.serviceCategory || "Project photo";
+        imgElement.classList.add("thumbnail");
+        imgElement.addEventListener("click", function () {
+            modalImage.src = fullUrl;
+            modal.style.display = "flex";
+        });
+
+        card.appendChild(imgElement);
+        container.appendChild(card);
+    }
+
+    window.loadSengchongWebsite()
+        .then(data => {
+            const photos = data.gallery || [];
+            photos.forEach(generateCard);
+        })
+        .catch(error => console.error("Error loading gallery:", error));
+
+    document.querySelector(".close-btn").addEventListener("click", function () {
+        modal.style.display = "none";
+    });
+
+    modal.addEventListener("click", function (event) {
+        if (event.target === this) {
+            this.style.display = "none";
+        }
+    });
+});
+</script>
+
+{% endblock %}

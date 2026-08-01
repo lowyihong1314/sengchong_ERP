@@ -1,0 +1,258 @@
+
+body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.poster {
+    position: relative; /* 使子元素使用绝对定位 */
+    width: 100%; /* 宽度覆盖整个页面 */
+    margin-bottom: 20px; /* 与下面内容的间距 */
+    display: flex; /* 使用 Flexbox 布局 */
+    align-items: center; /* 垂直居中对齐 */
+    justify-content: center; /* 水平居中对齐 */
+    overflow: hidden; /* 隐藏溢出的内容 */
+}
+
+.poster img {
+    display: block; /* 使图像成为块级元素 */
+    width: 100%; /* 图像宽度覆盖整个容器 */
+    height: 90vh; /* 图像高度自动调整 */
+    object-fit: cover; /* 裁剪图像以填充容器 */
+    object-position: center; /* 图像居中对齐 */
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0; /* 初始透明度为 0 */
+    }
+    to {
+        opacity: 1; /* 结束时透明度为 1 */
+    }
+}
+
+#name {
+    position: absolute; /* 绝对定位 */
+    width: 100%;
+    height: 100%;
+    z-index: 1; /* 确保在最上层 */
+    background-color: rgba(0, 0, 0, 0.311); /* 半透明背景 */
+    opacity: 0; /* 初始透明度为 0 */
+    animation: fadeIn 3s forwards; /* 进入动画 */
+}
+
+#name img {
+    position: absolute; /* 绝对定位 */
+    top: 50%; /* 垂直居中 */
+    left: 50%; /* 水平居中 */
+    transform: translate(-50%, -50%); /* 使元素中心对齐 */
+    display: block; /* 使图像成为块级元素 */
+    width: 100%; /* 图像宽度覆盖整个容器 */
+    min-width: 300px;
+    max-width: 600px;
+    height: auto;
+    object-fit: cover; /* 裁剪图像以填充容器 */
+    object-position: center; /* 图像居中对齐 */
+}
+
+#our-service{
+    text-align: center;
+}
+.photoGallery {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr); /* 6 列，均匀分配宽度 */
+    grid-auto-rows: 150px; /* 定义每行的基本高度 */
+    gap: 5px; /* 设置图片之间的间距 */
+    max-width: 1600px; /* 最大宽度 */
+    min-width: 300px; /* 最小宽度 */
+    height: auto; /* 固定高度 */
+    margin: 0 auto; /* 水平居中 */
+    position: relative; /* 相对定位 */
+}
+
+.website-loading {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 36px 16px;
+    color: #6c757d;
+    text-align: center;
+    font-weight: 700;
+}
+
+.photoGallery img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* 确保图片按比例裁剪并填充 */
+    display: block;
+    transition: all 0.3s ease;
+}
+
+.photo-item {
+    position: relative; /* 让图片和遮罩在同一容器内定位 */
+    overflow: hidden; /* 防止溢出 */
+    cursor: pointer;
+}
+
+.photo-item {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* 确保图片按比例裁剪并填充 */
+    display: block;
+    transition: all 0.3s ease;
+}
+
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.311); /* 白色半透明遮罩 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0; /* 初始隐藏 */
+    transition: opacity 0.3s ease; /* 鼠标悬停时的过渡效果 */
+}
+
+.overlay p {
+    font-size: 1.5em;
+    color: #ffffff;
+    text-align: center;
+}
+
+.photo-item:hover .overlay {
+    opacity: 1; /* 鼠标悬停时显示遮罩 */
+}
+
+.photo-item:hover img {
+    transform: scale(1.1); /* 鼠标悬停时图片放大10% */
+    transition: transform 0.3s ease; /* 平滑的放大效果 */
+}
+
+/* 使用 nth-child 来随机改变每个图片的大小 */
+.photo-item:nth-child(1) {
+    grid-row: span 2; /* 跨越 2 行 */
+    grid-column: span 2; /* 跨越 2 列 */
+}
+
+.photo-item:nth-child(2) {
+    grid-row: span 3; /* 跨越 3 行 */
+    grid-column: span 1; /* 跨越 1 列 */
+}
+
+.photo-item:nth-child(3) {
+    grid-row: span 1; /* 跨越 1 行 */
+    grid-column: span 3; /* 跨越 3 列 */
+}
+
+.photo-item:nth-child(4) {
+    grid-row: span 1; /* 跨越 2 行 */
+    grid-column: span 2; /* 跨越 1 列 */
+}
+
+.photo-item:nth-child(5) {
+    grid-row: span 1; /* 跨越 1 行 */
+    grid-column: span 1; /* 跨越 2 列 */
+}
+
+.photo-item:nth-child(6) {
+    grid-row: span 1; /* 跨越 2 行 */
+    grid-column: span 2; /* 跨越 3 列 */
+}
+
+.photo-item:nth-child(7) {
+    grid-row: span 2; /* 跨越 3 行 */
+    grid-column: span 2; /* 跨越 2 列 */
+}
+
+.photo-item:nth-child(8) {
+    grid-row: span 2; /* 跨越 1 行 */
+    grid-column: span 1; /* 跨越 2 列 */
+}
+
+.photo-item:nth-child(9) {
+    grid-row: span 1; /* 跨越 2 行 */
+    grid-column: span 3; /* 跨越 1 列 */
+}
+
+.card {
+    cursor: pointer;
+}
+
+.card:hover {
+    transform: scale(1.1); /* 鼠标悬停时图片放大10% */
+    transition: transform 0.3s ease; /* 平滑的放大效果 */
+}
+
+.contact-us h2 {
+    font-size: 2.5rem;
+    color: #333;
+}
+
+.card-img-top {
+    border: 3px solid #ccc; /* 可选，给头像添加边框 */
+}
+
+.card-body h5 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.card-body p {
+    font-size: 1rem;
+    color: #666;
+}
+
+@media (max-width: 400px) {
+    .photoGallery {
+        grid-template-columns: repeat(3, 1fr); /* 将列数减少为 2 列 */
+        height: auto; /* 高度自动适应内容 */
+    }
+
+    /* 使用 nth-child 来随机改变每个图片的大小 */
+    .photo-item:nth-child(1) {
+        grid-row: span 2; /* 跨越 2 行 */
+        grid-column: span 2; /* 跨越 2 列 */
+    }
+
+    .photo-item:nth-child(2) {
+        grid-row: span 3; /* 跨越 3 行 */
+        grid-column: span 1; /* 跨越 1 列 */
+    }
+
+    .photo-item:nth-child(3) {
+        grid-row: span 1; /* 跨越 1 行 */
+        grid-column: span 2; /* 跨越 3 列 */
+    }
+
+    .photo-item:nth-child(4) {
+        grid-row: span 1; /* 跨越 2 行 */
+        grid-column: span 1; /* 跨越 1 列 */
+    }
+
+    .photo-item:nth-child(5) {
+        grid-row: span 2; /* 跨越 1 行 */
+        grid-column: span 2; /* 跨越 2 列 */
+    }
+
+    .photo-item:nth-child(6) {
+        grid-row: span 2; /* 跨越 2 行 */
+        grid-column: span 1; /* 跨越 3 列 */
+    }
+
+    .photo-item:nth-child(7) {
+        grid-row: span 2; /* 跨越 3 行 */
+        grid-column: span 2; /* 跨越 2 列 */
+    }
+
+    .photo-item:nth-child(8) {
+        grid-row: span 2; /* 跨越 1 行 */
+        grid-column: span 1; /* 跨越 2 列 */
+    }
+
+    .photo-item:nth-child(9) {
+        grid-row: span 1; /* 跨越 2 行 */
+        grid-column: span 2; /* 跨越 1 列 */
+    }
+
+}
