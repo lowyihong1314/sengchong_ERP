@@ -1021,6 +1021,7 @@ export const MODULES = {
   },
   employees: {
     title: "Employees",
+    editable: true,
     singular: "Employee",
     label: "Employees",
     meta: "Seng Chong staff",
