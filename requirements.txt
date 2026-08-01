@@ -6,5 +6,4 @@ pymssql==2.3.13
 Pillow
 gunicorn
 
-# Uncomment when erp_data.db moves to Postgres (see docs/postgres-migration.md).
-# psycopg[binary]>=3.2
+psycopg[binary]>=3.2

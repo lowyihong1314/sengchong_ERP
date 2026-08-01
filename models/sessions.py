@@ -15,10 +15,8 @@ class ErpSession(db.Model):
     role = db.Column(db.String(32), nullable=False)
     server = db.Column(db.String(128), nullable=False, default="", server_default="")
 
-    # Unix epoch seconds. Float rather than a timestamp column to match the
-    # pre-ORM schema; the expiry check is a plain numeric comparison.
-    expires_at = db.Column(db.Float, nullable=False)
-    created_at = db.Column(db.String(40), nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     def __repr__(self):
         return f"<ErpSession {self.username}@{self.database_name}>"

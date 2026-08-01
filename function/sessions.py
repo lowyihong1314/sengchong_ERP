@@ -1,13 +1,10 @@
 import secrets
-import time
-from datetime import datetime, timezone
+from datetime import timedelta
 
 from models import db
 from models.sessions import ErpSession
 
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+from .services.values import now
 
 
 class SessionStore:
@@ -30,8 +27,8 @@ class SessionStore:
                 display_name=display_name or username,
                 role=role,
                 server=server or "",
-                expires_at=time.time() + self.ttl_seconds,
-                created_at=_now_iso(),
+                expires_at=now() + timedelta(seconds=self.ttl_seconds),
+                created_at=now(),
             )
         )
         db.session.commit()
@@ -53,7 +50,7 @@ class SessionStore:
         db.session.commit()
 
     def cleanup(self):
-        db.session.execute(db.delete(ErpSession).where(ErpSession.expires_at <= time.time()))
+        db.session.execute(db.delete(ErpSession).where(ErpSession.expires_at <= now()))
         db.session.commit()
 
     def update_database(self, token, database):
@@ -65,7 +62,7 @@ class SessionStore:
             return None
 
         session.database_name = database
-        session.expires_at = time.time() + self.ttl_seconds
+        session.expires_at = now() + timedelta(seconds=self.ttl_seconds)
         db.session.commit()
 
         return self._to_session(session)

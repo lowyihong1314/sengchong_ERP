@@ -1,9 +1,11 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from models import db
 from models.project_data import ErpProject, ErpProjectDocument
+
+from .values import money_or_empty, now, parse_date, parse_money, to_date_text, to_iso
 
 
 SERVICE_CATEGORIES = (
@@ -60,6 +62,7 @@ VALUE_FIELDS = {
     "estimatedCost",
     "actualCost",
 }
+DATE_FIELDS = {"expectedInstallDate", "completionDate"}
 DOCUMENT_FIELDS = {
     "quotationDocNo": "quotations",
     "invoiceDocNo": "invoices",
@@ -72,10 +75,6 @@ LIST_DOCUMENT_FIELDS = {
     "arPaymentDocNos",
     "apInvoiceDocNos",
 }
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _normalize_company(company):
@@ -104,19 +103,6 @@ def _split_doc_list(value):
             items.append(item)
             seen.add(key)
     return items
-
-
-def _number_or_none(value):
-    if value in (None, ""):
-        return None
-    try:
-        return round(float(value), 2)
-    except (TypeError, ValueError):
-        return None
-
-
-def _number_or_empty(value):
-    return "" if value is None else value
 
 
 def _string_or_empty(value):
@@ -162,7 +148,7 @@ class ProjectDataStore:
         if not fields.get("title"):
             raise ValueError("Project title is required.")
 
-        now = _now_iso()
+        timestamp = now()
         project_code = fields.get("projectCode") or self._next_project_code(company)
         self._ensure_unique_project_code(company, project_code)
 
@@ -178,16 +164,16 @@ class ProjectDataStore:
             site_address=fields.get("siteAddress") or "",
             service_category=fields.get("serviceCategory") or SERVICE_CATEGORIES[0],
             status=fields.get("status") or "Lead",
-            expected_install_date=fields.get("expectedInstallDate") or "",
-            completion_date=fields.get("completionDate") or "",
+            expected_install_date=fields.get("expectedInstallDate"),
+            completion_date=fields.get("completionDate"),
             quoted_total=fields.get("quotedTotal"),
             collected_total=fields.get("collectedTotal"),
             outstanding_amount=fields.get("outstandingAmount"),
             estimated_cost=fields.get("estimatedCost"),
             actual_cost=fields.get("actualCost"),
             notes=fields.get("notes") or "",
-            created_at=now,
-            updated_at=now,
+            created_at=timestamp,
+            updated_at=timestamp,
             created_by=username or "",
             updated_by=username or "",
         )
@@ -218,7 +204,7 @@ class ProjectDataStore:
                 continue
             setattr(project, column, fields[api_field])
 
-        project.updated_at = _now_iso()
+        project.updated_at = now()
         project.updated_by = username or ""
 
         if documents:
@@ -286,7 +272,9 @@ class ProjectDataStore:
                 continue
             value = payload.get(api_field)
             if api_field in VALUE_FIELDS:
-                project[api_field] = _number_or_none(value)
+                project[api_field] = parse_money(value)
+            elif api_field in DATE_FIELDS:
+                project[api_field] = parse_date(value)
             else:
                 project[api_field] = _string_or_empty(value)
 
@@ -390,23 +378,23 @@ class ProjectDataStore:
             "arPaymentDocNosText": ", ".join(documents.get("ar-payments", [])),
             "apInvoiceDocNos": documents.get("ap-invoices", []),
             "apInvoiceDocNosText": ", ".join(documents.get("ap-invoices", [])),
-            "expectedInstallDate": project.expected_install_date,
-            "completionDate": project.completion_date,
-            "quotedTotal": _number_or_empty(project.quoted_total),
-            "collectedTotal": _number_or_empty(project.collected_total),
-            "outstandingAmount": _number_or_empty(project.outstanding_amount),
-            "estimatedCost": _number_or_empty(project.estimated_cost),
-            "actualCost": _number_or_empty(project.actual_cost),
+            "expectedInstallDate": to_date_text(project.expected_install_date),
+            "completionDate": to_date_text(project.completion_date),
+            "quotedTotal": money_or_empty(project.quoted_total),
+            "collectedTotal": money_or_empty(project.collected_total),
+            "outstandingAmount": money_or_empty(project.outstanding_amount),
+            "estimatedCost": money_or_empty(project.estimated_cost),
+            "actualCost": money_or_empty(project.actual_cost),
             "notes": project.notes,
-            "createdAt": project.created_at,
-            "updatedAt": project.updated_at,
+            "createdAt": to_iso(project.created_at),
+            "updatedAt": to_iso(project.updated_at),
             "createdBy": project.created_by,
             "updatedBy": project.updated_by,
         }
         collected = project.collected_total
         actual_cost = project.actual_cost
         payload["margin"] = (
-            round(collected - actual_cost, 2)
+            float(round(collected - actual_cost, 2))
             if collected is not None and actual_cost is not None
             else ""
         )

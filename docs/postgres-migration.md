@@ -1,74 +1,100 @@
 # Postgres Migration
 
-Target: move `erp_data.db` (ERP-owned data only) from SQLite to Postgres.
+Status: **done**. `erp_data.db` now runs on Postgres 18. This document is the
+record of how, and how to redo it on another machine.
 
-AutoCount's SQL Server databases are **not** part of this. They stay where they
-are, read through `function/sql_reader.py` and written through the AutoCount SDK.
-Nothing in this document touches `AED_SENG`, `AED_MANSON`, or `sqlserver-backups/`.
+AutoCount's SQL Server databases were not part of this and were not touched.
+They are still read through `function/services/sql_reader.py` and written
+through the AutoCount SDK.
 
-## What is already in place
+## Layout
 
-- `models/` holds every ERP-owned table as a SQLAlchemy model.
-- Alembic owns the schema. Baseline revision: `8cc3e9a9bd3f`.
-- The database URL is read from `DATABASE_URL` in one place
-  (`function/config.py`), used by both the app and `migrations/env.py`.
-  Switching engines is a config change, not a code change.
-
-So the move itself is:
+- Server: PostgreSQL 18, local, port 5432
+- Role `erp`, database `erp` owned by it
+- Connection string lives in `.env` as `DATABASE_URL` (gitignored)
+- `function/config.py` reads it; `migrations/env.py` reads the same variable,
+  so app and migrations can never drift apart
 
 ```bash
-# 1. create the database, then point both app and migrations at it
-export DATABASE_URL="postgresql+psycopg://erp:***@127.0.0.1/erp"
+DATABASE_URL=postgresql+psycopg://erp:<password>@127.0.0.1:5432/erp
+```
 
-# 2. build the schema from scratch
-python3 -m alembic upgrade head
+Leave `DATABASE_URL` unset and the app falls back to the local SQLite file --
+useful for a throwaway copy, not for production.
 
-# 3. copy the rows across (see "Data copy" below)
+## Column types
 
-# 4. restart
+Revision `22688ded425d` converted the columns the SQLite schema had only
+approximated:
+
+| Column | Was | Now |
+|---|---|---|
+| every `created_at` / `updated_at` | `varchar(40)` ISO text | `timestamptz` |
+| `erp_sessions.expires_at` | `double precision` unix epoch | `timestamptz` |
+| `erp_projects.expected_install_date`, `.completion_date` | `varchar(20)`, `''` = unset | `date NULL` |
+| the five `erp_projects` money columns | `double precision` | `numeric(14,2)` |
+| `erp_project_photos.is_public`, `.website_visible`, `.is_cover` | `integer` 0/1 | `boolean` |
+
+Every `ALTER` in that revision carries an explicit `USING` clause. Postgres has
+no implicit cast from varchar to timestamptz, from double precision to
+timestamptz, or from integer to boolean, so without one the statements fail --
+on an empty table as well as a populated one.
+
+The revision is Postgres-only and raises on any other dialect. The legacy
+SQLite file was never migrated in place; `scripts/copy_to_postgres.py`
+converted values as it copied them.
+
+**The JSON API did not change.** Timestamps still serialise as ISO 8601 with an
+offset, an unset date is still `""`, money is still a JSON number, and the
+boolean flags still come out as `true`/`false`. All of that conversion lives in
+`function/services/values.py`, and it is the reason the frontend needed no
+change at all.
+
+## Redoing it elsewhere
+
+```bash
+sudo apt-get install -y postgresql postgresql-contrib
+sudo -u postgres psql -c "CREATE ROLE erp LOGIN PASSWORD '<generate one>';"
+sudo -u postgres createdb -O erp erp
+
+export DATABASE_URL="postgresql+psycopg://erp:<password>@127.0.0.1:5432/erp"
+python3 -m alembic upgrade head          # builds the schema, already tightened
+python3 scripts/copy_to_postgres.py      # moves the rows, converting as it goes
+
 systemctl --user restart erp-gateway.service
 ```
 
-## Type changes to make first
+`copy_to_postgres.py` refuses to write into a target that already has rows
+unless you pass `--truncate`, checks the target is at revision `22688ded425d`
+first, and compares row counts per table afterwards.
 
-The current columns mirror what SQLite accepted. SQLite ignores declared types,
-Postgres does not, so these should be tightened in a migration **before** the
-data is copied. Each one is a separate, reviewable Alembic revision.
+## Things that bit, or would have
 
-| Table.column | Now | Should become | Why it is not done yet |
-|---|---|---|---|
-| every `created_at` / `updated_at` | `VARCHAR(40)` holding ISO 8601 with offset | `TIMESTAMP WITH TIME ZONE` | Values already parse cleanly; needs the DAO layer to stop formatting strings by hand. |
-| `erp_sessions.expires_at` | `FLOAT` unix epoch | `TIMESTAMP WITH TIME ZONE` | Expiry is compared numerically in `function/sessions.py`. |
-| `erp_projects.expected_install_date`, `.completion_date` | `VARCHAR(20)`, `''` means unset | `DATE NULL` | `''` is not a valid `DATE`; every read/write site must learn to use `None`. |
-| `erp_projects.quoted_total` and the other four money columns | `FLOAT` | `NUMERIC(14,2)` | Float is wrong for money. Values are small enough that nothing has drifted yet. |
-| `erp_project_photos.is_public`, `.website_visible`, `.is_cover` | `INTEGER` 0/1 | `BOOLEAN` | The API serialises these as ints today. |
+- **Sequences.** `erp_project_documents.id` and `erp_website_audit_log.id` are
+  identity columns. Rows were copied with explicit ids, so the copy script runs
+  `setval` afterwards; without it the next insert collides on the primary key.
+- **`sengchong_settings.key`** is a column literally named `key`. Legal in
+  Postgres, but quote it in any hand-written SQL.
+- **`var/project-photos/`** stays on the filesystem. Only metadata rows moved.
+- **SQLite could not hold these types.** `DateTime(timezone=True)` silently
+  loses the offset there, which would have broken the ISO strings the API
+  returns. That is why the tightening is Postgres-only rather than a shared
+  migration.
 
-None of these are urgent for SQLite. All of them are worth doing before the
-Postgres cutover, because fixing them afterwards means a second data migration.
+## Verification that was run
 
-## Data copy
+- Fresh-from-migration schema diffed against the live one: same tables,
+  columns, foreign keys, unique constraints, named indexes.
+- `downgrade` then `upgrade` round-tripped cleanly.
+- 48 API payloads (142 records) captured from SQLite before the change and from
+  Postgres after: **byte-identical**.
+- 25 write-path checks on Postgres: money rounding, `""` to NULL dates and
+  back, margin arithmetic, boolean publish/unpublish cascades, single-cover
+  enforcement, audit entries, session expiry.
+- Row counts per table match between the two databases.
 
-Row counts are small (low hundreds), so a straight SQLAlchemy copy is enough --
-no need for `pg_dump`/CSV plumbing.
+## Rollback
 
-```python
-# scripts/copy_to_postgres.py (not written yet)
-# read every model from the SQLite engine, bulk-insert into the Postgres engine
-# in FK-safe order: erp_users, erp_sessions, sengchong_*, erp_projects,
-# erp_project_documents, erp_project_photos, erp_website_audit_log
-```
-
-Verify after the copy by comparing `SELECT count(*)` per table, and by opening
-each ERP module in the browser.
-
-## Things that will bite
-
-- **`sengchong_settings.key`** is a column named `key`. Legal in Postgres but it
-  reads badly in raw SQL; quote it or rename it during the move.
-- **Autoincrement.** `erp_project_documents.id` and `erp_website_audit_log.id`
-  become `SERIAL`/identity columns. After copying rows with explicit ids, the
-  sequence must be reset with `setval`, or the next insert collides.
-- **`var/project-photos/`** stays on the filesystem. Only the metadata rows move.
-- **Concurrency.** SQLite is why `gunicorn --workers 2` was safe to begin with
-  (sessions live in the DB). Postgres does not change that, but it does make
-  raising the worker count worthwhile.
+The pre-cutover SQLite file is kept as `erp_data.db.bak-pre-pg-<timestamp>`.
+To go back, comment out `DATABASE_URL` in `.env` and restart -- but note that
+anything written since the cutover lives only in Postgres.

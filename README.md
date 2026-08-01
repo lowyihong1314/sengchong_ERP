@@ -39,7 +39,8 @@ function/         the app package
   config.py         Settings.from_env()
   routes/           blueprints
   services/         AutoCount SDK bridge, SQL reader, ERP data stores
-migrations/       Alembic; baseline revision 8cc3e9a9bd3f
+  services/values.py  DB value <-> API JSON conversions
+migrations/       Alembic; head revision 22688ded425d
 ```
 
 `models/<name>.py` and `function/services/<name>.py` are deliberately named in
@@ -47,17 +48,21 @@ pairs: the model file describes the table, the service file holds the logic.
 
 ### Database
 
-ERP-owned data lives in `erp_data.db` (SQLite today, Postgres later). AutoCount's
-own SQL Server databases are never touched by this layer -- they are read through
-`function/services/sql_reader.py` and written through the AutoCount SDK.
+ERP-owned data lives in Postgres. AutoCount's own SQL Server databases are never
+touched by this layer -- they are read through `function/services/sql_reader.py`
+and written through the AutoCount SDK.
 
 The engine is chosen by one environment variable, read in `function/config.py`
 and reused by `migrations/env.py`:
 
 ```bash
-DATABASE_URL=                                        # empty -> local sqlite file
-DATABASE_URL=postgresql+psycopg://user:pass@host/erp  # the eventual target
+DATABASE_URL=postgresql+psycopg://erp:pass@127.0.0.1:5432/erp   # production
+DATABASE_URL=                                                   # unset -> local sqlite copy
 ```
+
+`function/services/values.py` converts between the typed columns
+(`timestamptz`, `date`, `numeric`, `boolean`) and what the JSON API exposes, so
+the frontend contract is unchanged by the column types.
 
 Schema changes go through Alembic, never through `create_all()`:
 
@@ -68,8 +73,8 @@ python3 -m alembic current
 python3 -m alembic downgrade -1
 ```
 
-See `docs/postgres-migration.md` for the column types that should be tightened
-before the Postgres cutover.
+See `docs/postgres-migration.md` for the schema, the cutover, and how to redo
+it on another machine.
 
 ## Frontend Structure
 
@@ -146,14 +151,15 @@ The gateway is managed by a user-level systemd unit on port `5000`.
 - Working directory: `/home/yukang/ERP`
 - Host/port: `0.0.0.0:5000`
 
-ERP-owned data is stored in `/home/yukang/ERP/erp_data.db`:
+ERP-owned data is stored in Postgres (see `DATABASE_URL` in `.env`):
 
 - ERP users
 - Web/API sessions
 - Projects/jobs and linked document numbers
 - Sengchong website services, contacts, and footer settings
 
-The current unit can run multiple workers because sessions are stored in SQLite:
+The unit can run multiple workers because sessions live in the database rather
+than in process memory:
 
 ```ini
 [Unit]

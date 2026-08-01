@@ -36,7 +36,7 @@ class SengchongSetting(db.Model):
 
     key = db.Column("key", db.String(64), primary_key=True)
     value = db.Column(db.Text, nullable=False)
-    updated_at = db.Column(db.String(40), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     def __repr__(self):
         return f"<SengchongSetting {self.key}>"
@@ -58,7 +58,7 @@ class ErpWebsiteAuditLog(db.Model):
     old_value = db.Column(db.Text, nullable=False, default="", server_default="")
     new_value = db.Column(db.Text, nullable=False, default="", server_default="")
     username = db.Column(db.String(64), nullable=False, default="", server_default="")
-    created_at = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     def __repr__(self):
         return f"<ErpWebsiteAuditLog {self.action} {self.entity_type}:{self.entity_id}>"

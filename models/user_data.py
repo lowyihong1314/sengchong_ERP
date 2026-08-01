@@ -13,11 +13,8 @@ class ErpUser(db.Model):
     default_company = db.Column(db.String(64), nullable=False, default="", server_default="")
     password_hash = db.Column(db.String(256), nullable=False)
 
-    # ISO 8601 with offset, e.g. 2026-06-05T07:39:02+00:00. Stored as text to
-    # match the pre-ORM schema; see docs/postgres-migration.md for the planned
-    # move to a real timestamp column.
-    created_at = db.Column(db.String(40), nullable=False)
-    updated_at = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     def __repr__(self):
         return f"<ErpUser {self.username} role={self.role}>"

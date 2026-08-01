@@ -1,5 +1,4 @@
 import json
-from datetime import datetime, timezone
 
 from models import db
 from models.sengchong_content import (
@@ -8,6 +7,8 @@ from models.sengchong_content import (
     SengchongService,
     SengchongSetting,
 )
+
+from .values import now
 
 
 DEFAULT_SERVICES = (
@@ -36,10 +37,6 @@ DEFAULT_FOOTER = {
 FOOTER_KEYS = frozenset(DEFAULT_FOOTER)
 
 
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
 class SengchongContentStore:
     """
     The public site's content: service cards, contacts and footer settings.
@@ -65,7 +62,7 @@ class SengchongContentStore:
         existing_keys = set(db.session.scalars(db.select(SengchongSetting.key)))
         for key, value in DEFAULT_FOOTER.items():
             if key not in existing_keys:
-                db.session.add(SengchongSetting(key=key, value=str(value), updated_at=_now_iso()))
+                db.session.add(SengchongSetting(key=key, value=str(value), updated_at=now()))
 
         db.session.commit()
 
@@ -144,7 +141,7 @@ class SengchongContentStore:
         return footer
 
     def update_footer(self, payload, *, company="", username=""):
-        now = _now_iso()
+        timestamp = now()
         settings = {s.key: s for s in db.session.scalars(db.select(SengchongSetting))}
         old_values = {key: setting.value for key, setting in settings.items()}
 
@@ -155,11 +152,11 @@ class SengchongContentStore:
 
             setting = settings.get(key)
             if setting is None:
-                setting = SengchongSetting(key=key, value=next_value, updated_at=now)
+                setting = SengchongSetting(key=key, value=next_value, updated_at=timestamp)
                 db.session.add(setting)
             else:
                 setting.value = next_value
-                setting.updated_at = now
+                setting.updated_at = timestamp
 
             self._audit_if_changed(
                 company, username, "website_footer_changed", "website_footer", "footer",
@@ -194,7 +191,7 @@ class SengchongContentStore:
                 old_value=old_text,
                 new_value=new_text,
                 username=username or "",
-                created_at=_now_iso(),
+                created_at=now(),
             )
         )
 

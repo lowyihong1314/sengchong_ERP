@@ -30,20 +30,20 @@ class ErpProject(db.Model):
     service_category = db.Column(db.String(64), nullable=False, default="", server_default="")
     status = db.Column(db.String(32), nullable=False, default="Lead", server_default="Lead")
 
-    # ISO date strings ("2026-08-01"); "" means not set. Kept as text to match
-    # the pre-ORM schema -- Postgres would want DATE NULL instead.
-    expected_install_date = db.Column(db.String(20), nullable=False, default="", server_default="")
-    completion_date = db.Column(db.String(20), nullable=False, default="", server_default="")
+    # NULL means "not set". The API still renders that as "".
+    expected_install_date = db.Column(db.Date)
+    completion_date = db.Column(db.Date)
 
-    quoted_total = db.Column(db.Float)
-    collected_total = db.Column(db.Float)
-    outstanding_amount = db.Column(db.Float)
-    estimated_cost = db.Column(db.Float)
-    actual_cost = db.Column(db.Float)
+    # Money is Numeric, not Float: these are quoted and collected amounts.
+    quoted_total = db.Column(db.Numeric(14, 2))
+    collected_total = db.Column(db.Numeric(14, 2))
+    outstanding_amount = db.Column(db.Numeric(14, 2))
+    estimated_cost = db.Column(db.Numeric(14, 2))
+    actual_cost = db.Column(db.Numeric(14, 2))
 
     notes = db.Column(db.Text, nullable=False, default="", server_default="")
-    created_at = db.Column(db.String(40), nullable=False)
-    updated_at = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
     created_by = db.Column(db.String(64), nullable=False, default="", server_default="")
     updated_by = db.Column(db.String(64), nullable=False, default="", server_default="")
 

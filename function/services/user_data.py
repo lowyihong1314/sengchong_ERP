@@ -1,17 +1,13 @@
-from datetime import datetime, timezone
-
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from models import db
 from models.user_data import ErpUser
 
+from .values import now, to_iso
+
 
 PROTECTED_USERNAMES = {"yukang"}
 USER_ROLES = {"admin", "user"}
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _normalize_username(username):
@@ -46,10 +42,10 @@ class UserDataStore:
         if role not in USER_ROLES:
             raise ValueError("Role must be admin or user.")
 
-        now = _now_iso()
+        timestamp = now()
         user = db.session.get(ErpUser, username)
         if user is None:
-            user = ErpUser(username=username, created_at=now)
+            user = ErpUser(username=username, created_at=timestamp)
             db.session.add(user)
 
         # An omitted field keeps whatever the row already had, then falls back
@@ -58,7 +54,7 @@ class UserDataStore:
         user.role = role or user.role or "user"
         user.default_company = default_company or user.default_company or ""
         user.password_hash = generate_password_hash(str(password))
-        user.updated_at = now
+        user.updated_at = timestamp
 
         db.session.commit()
         return self._public_user(user)
@@ -94,7 +90,7 @@ class UserDataStore:
             return None
 
         user.default_company = database or ""
-        user.updated_at = _now_iso()
+        user.updated_at = now()
         db.session.commit()
         return self._public_user(user)
 
@@ -108,6 +104,6 @@ class UserDataStore:
             "displayName": user.display_name or user.username,
             "role": user.role or "user",
             "defaultCompany": user.default_company or "",
-            "createdAt": user.created_at or "",
-            "updatedAt": user.updated_at or "",
+            "createdAt": to_iso(user.created_at),
+            "updatedAt": to_iso(user.updated_at),
         }

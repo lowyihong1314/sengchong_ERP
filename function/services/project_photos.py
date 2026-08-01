@@ -1,7 +1,6 @@
 import json
 import re
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -10,6 +9,8 @@ from models import db
 from models.project_data import ErpProject
 from models.project_photos import ErpProjectPhoto
 from models.sengchong_content import ErpWebsiteAuditLog
+
+from .values import now, to_iso
 
 
 SERVICE_CATEGORIES = (
@@ -29,10 +30,6 @@ TEXT_FIELDS = {
     "caption": "caption",
     "altText": "alt_text",
 }
-
-
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _normalize_company(company):
@@ -107,7 +104,7 @@ class ProjectPhotoStore:
         query = (
             db.select(ErpProjectPhoto)
             .join(ErpProject, ErpProject.id == ErpProjectPhoto.project_id)
-            .where(ErpProjectPhoto.is_public == 1, ErpProjectPhoto.website_visible == 1)
+            .where(ErpProjectPhoto.is_public.is_(True), ErpProjectPhoto.website_visible.is_(True))
         )
         # An empty company means "every company", used by the public site.
         if company:
@@ -173,7 +170,7 @@ class ProjectPhotoStore:
             stored_path, thumbnail_path = self._save_image(
                 company, project.project_code, photo_id, uploaded_file
             )
-            now = _now_iso()
+            timestamp = now()
             photo = ErpProjectPhoto(
                 id=photo_id,
                 project_id=project.id,
@@ -185,13 +182,13 @@ class ProjectPhotoStore:
                 service_category=_string_or_empty(payload.get("serviceCategory")),
                 caption=_string_or_empty(payload.get("caption")),
                 alt_text=_string_or_empty(payload.get("altText")),
-                is_public=1 if is_public else 0,
-                website_visible=1 if website_visible else 0,
+                is_public=is_public,
+                website_visible=website_visible,
                 # The first photo of an empty project becomes the cover.
-                is_cover=1 if existing_count == 0 and index == 0 else 0,
+                is_cover=existing_count == 0 and index == 0,
                 sort_order=_int_or_zero(payload.get("sortOrder")) or existing_count + index + 1,
-                created_at=now,
-                updated_at=now,
+                created_at=timestamp,
+                updated_at=timestamp,
                 uploaded_by=username or "",
                 updated_by=username or "",
             )
@@ -245,14 +242,14 @@ class ProjectPhotoStore:
                 "photo_public_enabled" if next_public else "photo_public_disabled",
                 "isPublic", current_public, next_public,
             )
-            photo.is_public = 1 if next_public else 0
+            photo.is_public = next_public
             changed = True
 
             if not next_public and "websiteVisible" not in payload:
                 self._append_audit_if_changed(
                     audit_entries, "photo_website_hidden", "websiteVisible", current_visible, False
                 )
-                photo.website_visible = 0
+                photo.website_visible = False
 
         if "websiteVisible" in payload:
             self._append_audit_if_changed(
@@ -260,7 +257,7 @@ class ProjectPhotoStore:
                 "photo_website_published" if next_visible else "photo_website_hidden",
                 "websiteVisible", current_visible, next_visible,
             )
-            photo.website_visible = 1 if next_visible else 0
+            photo.website_visible = next_visible
             changed = True
 
         if "sortOrder" in payload:
@@ -287,19 +284,19 @@ class ProjectPhotoStore:
                         ErpProjectPhoto.project_id == photo.project_id,
                         ErpProjectPhoto.id != photo.id,
                     )
-                    .values(is_cover=0),
+                    .values(is_cover=False),
                     execution_options={"synchronize_session": False},
                 )
             self._append_audit_if_changed(
                 audit_entries, "photo_cover_changed", "isCover", current_cover, is_cover
             )
-            photo.is_cover = 1 if is_cover else 0
+            photo.is_cover = is_cover
             changed = True
 
         if not changed:
             return self._photo_payload(photo)
 
-        photo.updated_at = _now_iso()
+        photo.updated_at = now()
         photo.updated_by = username or ""
         for entry in audit_entries:
             self._insert_audit(
@@ -347,7 +344,7 @@ class ProjectPhotoStore:
 
         project = self._get_project(company, "WEBSITE-GALLERY")
         if not project:
-            now = _now_iso()
+            timestamp = now()
             project = ErpProject(
                 id=uuid.uuid4().hex,
                 company=company,
@@ -356,8 +353,8 @@ class ProjectPhotoStore:
                 service_category="展示柜",
                 status="Completed",
                 notes="Imported legacy sengchong.com product gallery images.",
-                created_at=now,
-                updated_at=now,
+                created_at=timestamp,
+                updated_at=timestamp,
                 created_by=username or "",
                 updated_by=username or "",
             )
@@ -385,7 +382,7 @@ class ProjectPhotoStore:
             stored_path, thumbnail_path = self._save_image_from_path(
                 company, project.project_code, photo_id, path
             )
-            now = _now_iso()
+            timestamp = now()
             photo = ErpProjectPhoto(
                 id=photo_id,
                 project_id=project.id,
@@ -397,12 +394,12 @@ class ProjectPhotoStore:
                 service_category=project.service_category or "展示柜",
                 caption="",
                 alt_text="",
-                is_public=1,
-                website_visible=1,
-                is_cover=1 if existing_count == 0 and len(imported_rows) == 0 else 0,
+                is_public=True,
+                website_visible=True,
+                is_cover=existing_count == 0 and len(imported_rows) == 0,
                 sort_order=_int_or_zero(path.stem) or existing_count + len(imported_rows) + 1,
-                created_at=now,
-                updated_at=now,
+                created_at=timestamp,
+                updated_at=timestamp,
                 uploaded_by=username or "",
                 updated_by=username or "",
             )
@@ -566,8 +563,8 @@ class ProjectPhotoStore:
                     "company": photo.company,
                     "projectId": photo.project_id,
                     "originalFilename": photo.original_filename,
-                    "createdAt": photo.created_at,
-                    "updatedAt": photo.updated_at,
+                    "createdAt": to_iso(photo.created_at),
+                    "updatedAt": to_iso(photo.updated_at),
                     "uploadedBy": photo.uploaded_by,
                     "updatedBy": photo.updated_by,
                 }
@@ -610,7 +607,7 @@ class ProjectPhotoStore:
                 old_value=self._audit_value(old_value),
                 new_value=self._audit_value(new_value),
                 username=username or "",
-                created_at=_now_iso(),
+                created_at=now(),
             )
         )
 
@@ -651,5 +648,5 @@ class ProjectPhotoStore:
             "oldValue": entry.old_value,
             "newValue": entry.new_value,
             "username": entry.username,
-            "createdAt": entry.created_at,
+            "createdAt": to_iso(entry.created_at),
         }

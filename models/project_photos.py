@@ -43,14 +43,13 @@ class ErpProjectPhoto(db.Model):
     caption = db.Column(db.Text, nullable=False, default="", server_default="")
     alt_text = db.Column(db.Text, nullable=False, default="", server_default="")
 
-    # 0/1 integers rather than booleans, to match the pre-ORM schema.
-    is_public = db.Column(db.Integer, nullable=False, default=0, server_default="0")
-    website_visible = db.Column(db.Integer, nullable=False, default=0, server_default="0")
-    is_cover = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    is_public = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    website_visible = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    is_cover = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     sort_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
-    created_at = db.Column(db.String(40), nullable=False)
-    updated_at = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
     uploaded_by = db.Column(db.String(64), nullable=False, default="", server_default="")
     updated_by = db.Column(db.String(64), nullable=False, default="", server_default="")
 
