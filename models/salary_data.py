@@ -47,6 +47,36 @@ class ErpEmployeeSalary(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.true()
     )
 
+    # --- Overtime -------------------------------------------------------
+    # Everyone here is day-rated, and the hourly OT base is the daily rate
+    # divided by that person's standard hours: 8, 9 and 10 are all in use.
+    # The multiplier that goes with it varies too (1.5, 1.75, 2.0), and the
+    # pairing is per person, not a company-wide rule.
+    ot_divisor = db.Column(db.Numeric(5, 2), nullable=False, default=8, server_default="8")
+    ot_multiplier = db.Column(
+        db.Numeric(5, 2), nullable=False, default=1.5, server_default="1.5"
+    )
+
+    # --- Overnight ------------------------------------------------------
+    # All four arrangements are in use, so this is a per-person mode rather
+    # than one formula:
+    #   allowance             flat amount per night
+    #   hourly                hours x (daily / ot_divisor) x overnight_multiplier
+    #   extra_day             daily x overnight_day_factor, per night
+    #   allowance_plus_hours  the flat amount AND the hours on top
+    overnight_mode = db.Column(
+        db.String(24), nullable=False, default="allowance", server_default="allowance"
+    )
+    overnight_allowance = db.Column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    overnight_multiplier = db.Column(
+        db.Numeric(5, 2), nullable=False, default=2, server_default="2"
+    )
+    overnight_day_factor = db.Column(
+        db.Numeric(5, 2), nullable=False, default=1, server_default="1"
+    )
+
     bank_name = db.Column(db.String(64), nullable=False, default="", server_default="")
     bank_account_no = db.Column(db.String(64), nullable=False, default="", server_default="")
 

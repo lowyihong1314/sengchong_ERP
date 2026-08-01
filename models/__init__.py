@@ -12,5 +12,6 @@ from models import project_data  # noqa: E402,F401
 from models import project_photos  # noqa: E402,F401
 from models import salary_data  # noqa: E402,F401
 from models import sengchong_content  # noqa: E402,F401
+from models import work_entry  # noqa: E402,F401
 from models import sessions  # noqa: E402,F401
 from models import user_data  # noqa: E402,F401

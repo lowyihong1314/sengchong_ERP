@@ -41,7 +41,7 @@ export const PROJECT_LINK_MODULES = new Set([
 
 // Modules whose data this ERP owns. Everything else is an AutoCount
 // passthrough under /api/autocount.
-export const ERP_OWNED_MODULES = new Set(["projects", "employees", "salary"]);
+export const ERP_OWNED_MODULES = new Set(["projects", "employees", "salary", "work-entries"]);
 
 export const EMPLOYEE_POSITIONS = [
   "设计",
@@ -55,6 +55,15 @@ export const EMPLOYEE_POSITIONS = [
 ];
 export const EMPLOYEE_STATUSES = ["Active", "On Leave", "Resigned"];
 export const PAY_TYPES = ["Monthly", "Daily", "Hourly"];
+
+// How a night away is paid. All four arrangements are in use here, so this is
+// configured per person rather than being one company-wide formula.
+export const OVERNIGHT_MODES = [
+  "allowance",
+  "hourly",
+  "extra_day",
+  "allowance_plus_hours",
+];
 
 // The sidebar is grouped; moduleKeys is derived so there is one source of
 // truth for "which module keys exist" (routing validates against it).
@@ -72,7 +81,11 @@ export const MODULE_GROUPS = [
   },
   { key: "banking", label: "Banking", modules: ["cash-book", "bank-transactions"] },
   { key: "masters", label: "Masters", modules: ["items", "debtors", "creditors"] },
-  { key: "employees", label: "Employees", modules: ["employees", "salary"] },
+  {
+    key: "employees",
+    label: "Employees",
+    modules: ["employees", "salary", "work-entries"],
+  },
   {
     key: "system",
     label: "System",

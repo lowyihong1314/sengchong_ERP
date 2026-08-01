@@ -6,8 +6,20 @@ from .values import money_or_empty, now, parse_date, parse_money, to_date_text, 
 
 
 PAY_TYPES = ("Monthly", "Daily", "Hourly")
+# How a night away is paid. All four are in use, so it is a per-person mode.
+OVERNIGHT_MODES = ("allowance", "hourly", "extra_day", "allowance_plus_hours")
 
-MONEY_FIELDS = {"basicRate": "basic_rate", "fixedAllowance": "fixed_allowance"}
+MONEY_FIELDS = {
+    "basicRate": "basic_rate",
+    "fixedAllowance": "fixed_allowance",
+    # The OT hourly base is dailyRate / otDivisor; the divisor is that
+    # person's standard hours (8, 9 and 10 are all in use here).
+    "otDivisor": "ot_divisor",
+    "otMultiplier": "ot_multiplier",
+    "overnightAllowance": "overnight_allowance",
+    "overnightMultiplier": "overnight_multiplier",
+    "overnightDayFactor": "overnight_day_factor",
+}
 FLAG_FIELDS = {"epfContributing": "epf_contributing", "socsoContributing": "socso_contributing"}
 DATE_FIELDS = {"effectiveFrom": "effective_from"}
 TEXT_FIELDS = {
@@ -18,6 +30,7 @@ TEXT_FIELDS = {
     "taxNo": "tax_no",
     "bankName": "bank_name",
     "bankAccountNo": "bank_account_no",
+    "overnightMode": "overnight_mode",
     "notes": "notes",
 }
 
@@ -26,6 +39,34 @@ def _string_or_empty(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _ot_rule_text(salary):
+    divisor = salary.ot_divisor or 8
+    return (
+        f"OT = daily / {_trim(divisor)} x {_trim(salary.ot_multiplier or 0)}"
+        f"  |  overnight: {_overnight_text(salary)}"
+    )
+
+
+def _overnight_text(salary):
+    mode = salary.overnight_mode or "allowance"
+    if mode == "hourly":
+        return f"hours x (daily / {_trim(salary.ot_divisor or 8)}) x {_trim(salary.overnight_multiplier or 0)}"
+    if mode == "extra_day":
+        return f"{_trim(salary.overnight_day_factor or 0)} x daily per night"
+    if mode == "allowance_plus_hours":
+        return (
+            f"{_trim(salary.overnight_allowance or 0)} per night + "
+            f"hours x (daily / {_trim(salary.ot_divisor or 8)}) x {_trim(salary.overnight_multiplier or 0)}"
+        )
+    return f"{_trim(salary.overnight_allowance or 0)} per night"
+
+
+def _trim(value):
+    """2 dp columns read badly as 8.00 / 1.50 in a rule sentence."""
+    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    return text or "0"
 
 
 def _bool(value):
@@ -47,7 +88,7 @@ class SalaryDataStore:
     """
 
     def meta(self):
-        return {"payTypes": list(PAY_TYPES)}
+        return {"payTypes": list(PAY_TYPES), "overnightModes": list(OVERNIGHT_MODES)}
 
     def list_salaries(self, *, include_inactive=False):
         """
@@ -84,6 +125,15 @@ class SalaryDataStore:
         if pay_type and pay_type not in PAY_TYPES:
             raise ValueError(f"Pay type must be one of: {', '.join(PAY_TYPES)}")
 
+        mode = _string_or_empty(payload.get("overnightMode")) or None
+        if mode and mode not in OVERNIGHT_MODES:
+            raise ValueError(f"Overnight mode must be one of: {', '.join(OVERNIGHT_MODES)}")
+
+        if "otDivisor" in payload:
+            divisor = parse_money(payload.get("otDivisor"))
+            if divisor is not None and divisor <= 0:
+                raise ValueError("otDivisor must be greater than zero")
+
         for api_field in MONEY_FIELDS:
             if api_field in payload and parse_money(payload.get(api_field)) is None:
                 if _string_or_empty(payload.get(api_field)) != "":
@@ -112,6 +162,11 @@ class SalaryDataStore:
 
         if not salary.pay_type:
             salary.pay_type = "Monthly"
+        if not salary.overnight_mode:
+            salary.overnight_mode = "allowance"
+        # A zero divisor would make the OT rate infinite; fall back to 8.
+        if not salary.ot_divisor or salary.ot_divisor <= 0:
+            salary.ot_divisor = 8
 
         salary.updated_at = timestamp
         salary.updated_by = username or ""
@@ -154,6 +209,12 @@ class SalaryDataStore:
                     "taxNo": "",
                     "epfContributing": True,
                     "socsoContributing": True,
+                    "otDivisor": "",
+                    "otMultiplier": "",
+                    "overnightMode": "",
+                    "overnightAllowance": "",
+                    "overnightMultiplier": "",
+                    "overnightDayFactor": "",
                     "bankName": "",
                     "bankAccountNo": "",
                     "effectiveFrom": "",
@@ -177,6 +238,15 @@ class SalaryDataStore:
                 "taxNo": salary.tax_no,
                 "epfContributing": bool(salary.epf_contributing),
                 "socsoContributing": bool(salary.socso_contributing),
+                "otDivisor": money_or_empty(salary.ot_divisor),
+                "otMultiplier": money_or_empty(salary.ot_multiplier),
+                "overnightMode": salary.overnight_mode,
+                "overnightAllowance": money_or_empty(salary.overnight_allowance),
+                "overnightMultiplier": money_or_empty(salary.overnight_multiplier),
+                "overnightDayFactor": money_or_empty(salary.overnight_day_factor),
+                # Spelled out so the setup screen can show what the rule means
+                # without the reader reconstructing it from four numbers.
+                "otRuleText": _ot_rule_text(salary),
                 "bankName": salary.bank_name,
                 "bankAccountNo": salary.bank_account_no,
                 "effectiveFrom": to_date_text(salary.effective_from),

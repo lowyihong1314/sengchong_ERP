@@ -30,6 +30,10 @@ def _employee_data():
     return current_app.extensions["employee_data"]
 
 
+def _work_entries():
+    return current_app.extensions["work_entries"]
+
+
 def _salary_data():
     return current_app.extensions["salary_data"]
 
