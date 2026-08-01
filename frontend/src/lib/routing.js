@@ -1,27 +1,27 @@
-import { moduleKeys } from "../constants.js";
+import { ERP_OWNED_MODULES, moduleKeys } from "../constants.js";
 import { MODULES } from "../modules.js";
 
 export function getModuleListPath(moduleKey, options = {}) {
   const refreshQuery = options.refresh ? "?refresh=1" : "";
-  if (moduleKey === "projects") return `/api/projects${refreshQuery}`;
-  return `/api/autocount/${moduleKey}${refreshQuery}`;
+  const base = ERP_OWNED_MODULES.has(moduleKey) ? "/api" : "/api/autocount";
+  return `${base}/${moduleKey}${refreshQuery}`;
 }
 
 export function getModuleDetailPath(moduleKey, key, options = {}) {
   const refreshQuery = options.refresh ? "?refresh=1" : "";
   const encodedKey = encodeURIComponent(key);
-  if (moduleKey === "projects") return `/api/projects/${encodedKey}${refreshQuery}`;
-  return `/api/autocount/${moduleKey}/${encodedKey}${refreshQuery}`;
+  const base = ERP_OWNED_MODULES.has(moduleKey) ? "/api" : "/api/autocount";
+  return `${base}/${moduleKey}/${encodedKey}${refreshQuery}`;
 }
 
 export function getModuleCreatePath(moduleKey) {
-  if (moduleKey === "projects") return "/api/projects";
-  return `/api/autocount/${moduleKey}`;
+  const base = ERP_OWNED_MODULES.has(moduleKey) ? "/api" : "/api/autocount";
+  return `${base}/${moduleKey}`;
 }
 
 export function getModuleUpdatePath(moduleKey, key) {
-  if (moduleKey === "projects") return `/api/projects/${encodeURIComponent(key)}`;
-  return `/api/autocount/${moduleKey}/${encodeURIComponent(key)}`;
+  const base = ERP_OWNED_MODULES.has(moduleKey) ? "/api" : "/api/autocount";
+  return `${base}/${moduleKey}/${encodeURIComponent(key)}`;
 }
 
 export function getLinkedProjectsPath(moduleKey, key) {

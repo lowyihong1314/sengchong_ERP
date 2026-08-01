@@ -26,6 +26,10 @@ def _user_data():
     return current_app.extensions["user_data"]
 
 
+def _employee_data():
+    return current_app.extensions["employee_data"]
+
+
 def _project_data():
     return current_app.extensions["project_data"]
 

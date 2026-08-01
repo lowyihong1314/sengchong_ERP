@@ -39,6 +39,22 @@ export const PROJECT_LINK_MODULES = new Set([
   "purchase-orders",
 ]);
 
+// Modules whose data this ERP owns. Everything else is an AutoCount
+// passthrough under /api/autocount.
+export const ERP_OWNED_MODULES = new Set(["projects", "employees"]);
+
+export const EMPLOYEE_POSITIONS = [
+  "设计",
+  "量尺",
+  "木工",
+  "安装",
+  "油漆",
+  "采购",
+  "行政",
+  "司机",
+];
+export const EMPLOYEE_STATUSES = ["Active", "On Leave", "Resigned"];
+
 export const moduleKeys = [
   "projects",
   "quotations",
@@ -55,6 +71,7 @@ export const moduleKeys = [
   "debtors",
   "creditors",
   "rdp-allow",
+  "employees",
   "user-management",
   "website-content",
 ];

@@ -34,6 +34,7 @@ run.py            entry point; gunicorn serves run:app
 models/           SQLAlchemy models, one module per domain
   __init__.py       db = SQLAlchemy()
   user_data.py      ErpUser
+  employee_data.py  ErpEmployee
   sessions.py       ErpSession
   project_data.py   ErpProject, ErpProjectDocument
   project_photos.py ErpProjectPhoto
@@ -44,11 +45,31 @@ function/         the app package
   routes/           blueprints
   services/         AutoCount SDK bridge, SQL reader, ERP data stores
   services/values.py  DB value <-> API JSON conversions
-migrations/       Alembic; head revision 22688ded425d
+migrations/       Alembic; head revision 54a69eb60389
 ```
 
 `models/<name>.py` and `function/services/<name>.py` are deliberately named in
 pairs: the model file describes the table, the service file holds the logic.
+
+### Employees and users are not the same thing
+
+`ErpUser` is a login; `ErpEmployee` is a person who works here. Most of the
+workshop and installation crew never sign in, and a login can exist without an
+employee (an external bookkeeper, an integration account), so the two are
+joined by an optional `erp_employees.username` -- unique, and `ON DELETE SET
+NULL` so removing a login does not remove the person.
+
+Two consequences worth remembering:
+
+- `erp_users.role` (`admin`/`user`) is an **authorisation** role: what the
+  login may click. `erp_employees.position` (木工, 安装, 设计 ...) is a **job
+  title**. Do not make one drive the other -- a carpenter who needs to see his
+  own job sheet should not have to be an ERP admin.
+- Employees are retired by setting `status` to `Resigned`, never deleted.
+  Project history refers to them.
+
+Subcontractors are not employees. They are AutoCount creditors billed through
+AP invoices; recording them here would make labour cost and AP disagree.
 
 ### Database
 
@@ -249,6 +270,12 @@ POST   /api/website-content/assets/:kind
 GET    /api/website-gallery
 POST   /api/website-gallery/import-legacy-products
 GET    /api/website-audit-log
+
+GET    /api/employees                      staff records (ERP-owned)
+POST   /api/employees                      admin only
+GET    /api/employees/:code
+PATCH  /api/employees/:code                admin only
+GET    /api/employees/meta                 positions and statuses
 
 GET    /api/projects                       ERP-owned project/job layer
 POST   /api/projects

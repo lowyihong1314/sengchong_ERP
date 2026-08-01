@@ -5,6 +5,7 @@ from models import db
 from .config import Settings
 from .routes.auth import auth_bp
 from .routes.autocount import autocount_bp
+from .routes.employees import employees_bp
 from .routes.health import health_bp
 from .routes.projects import projects_bp
 from .routes.public import public_bp
@@ -15,6 +16,7 @@ from .routes.frontend import frontend_bp
 from .routes.sengchong import sengchong_bp
 from .sessions import SessionStore
 from .services.autocount_sdk import AutoCountSdk
+from .services.employee_data import EmployeeDataStore
 from .services.project_data import ProjectDataStore
 from .services.project_photos import ProjectPhotoStore
 from .services.sengchong_content import SengchongContentStore
@@ -44,6 +46,7 @@ def create_app():
     app.extensions["autocount_sdk"] = AutoCountSdk(settings)
     app.extensions["sql_reader"] = SqlReadService(settings)
     app.extensions["user_data"] = UserDataStore()
+    app.extensions["employee_data"] = EmployeeDataStore()
     app.extensions["project_data"] = ProjectDataStore()
     app.extensions["project_photos"] = ProjectPhotoStore(settings.base_dir)
     app.extensions["sengchong_content"] = SengchongContentStore()
@@ -60,6 +63,7 @@ def create_app():
         rdp_bp,
         website_bp,
         projects_bp,
+        employees_bp,
         public_bp,
         autocount_bp,
     ):
