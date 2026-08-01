@@ -3,10 +3,8 @@
 dns_sync/cloudflare_API.md
 
 # --- ERP-owned data (real customer and accounting data) ---
-erp_data.db
-erp_data.db.bak-*
-erp.sql
 sqlserver-backups/
+pg-backups/
 var/
 
 # --- Customer material ---

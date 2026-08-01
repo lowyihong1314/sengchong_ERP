@@ -61,7 +61,7 @@ class SalaryDataStore:
             query = query.where(ErpEmployee.status == "Active")
 
         employees = db.session.scalars(
-            query.order_by(ErpEmployee.status, ErpEmployee.name)
+            query.order_by(ErpEmployee.status, ErpEmployee.name, ErpEmployee.employee_code)
         ).unique()
         return [self._public_salary(employee, employee.salary) for employee in employees]
 

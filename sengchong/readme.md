@@ -5,8 +5,8 @@ The Sengchong public website is now served by the ERP Flask app.
 - Single app factory: `function.create_app()`
 - WSGI entry: `/home/yukang/ERP/run.py`
 - Port: `5000`
-- Auth: ERP users in `/home/yukang/ERP/erp_data.db`
-- Content data: ERP-owned SQLite tables in `/home/yukang/ERP/erp_data.db`
+- Auth: ERP users in Postgres (see `DATABASE_URL` in `.env`)
+- Content data: ERP-owned Postgres tables
 - Static assets/templates remain under `/home/yukang/ERP/sengchong/`
 
 ## Ownership Rule

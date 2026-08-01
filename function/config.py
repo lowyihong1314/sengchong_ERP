@@ -27,6 +27,29 @@ def env(name, default=""):
     return os.getenv(name, default)
 
 
+def _require_database_url():
+    """
+    The ERP-owned database. Postgres only.
+
+    There is deliberately no SQLite fallback: the schema uses timestamptz,
+    date, numeric and boolean columns that SQLite cannot hold faithfully, so a
+    fallback would quietly produce a database the app appears to accept and
+    then reads wrong. Failing here is the safer answer.
+    """
+    url = env("DATABASE_URL", "").strip()
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Copy .env.example to .env and point it at "
+            "Postgres, e.g. postgresql+psycopg://erp:<password>@127.0.0.1:5432/erp"
+        )
+    if url.startswith("sqlite"):
+        raise RuntimeError(
+            "DATABASE_URL points at SQLite. This application moved to Postgres; "
+            "see docs/postgres-migration.md."
+        )
+    return url
+
+
 def parse_company_databases(value):
     if not value:
         return DEFAULT_COMPANY_DATABASES
@@ -52,7 +75,6 @@ def parse_company_databases(value):
 class Settings:
     base_dir: Path
     frontend_dist_dir: Path
-    erp_db_path: Path
     database_url: str
     sengchong_static_dir: Path
     sengchong_template_dir: Path
@@ -86,11 +108,7 @@ class Settings:
         return cls(
             base_dir=BASE_DIR,
             frontend_dist_dir=BASE_DIR / "frontend" / "dist",
-            erp_db_path=BASE_DIR / "erp_data.db",
-            # The single switch for the eventual Postgres move. Leave unset to
-            # keep using the local SQLite file; set to
-            # postgresql+psycopg://user:pass@host/dbname to move over.
-            database_url=env("DATABASE_URL", "") or f"sqlite:///{BASE_DIR / 'erp_data.db'}",
+            database_url=_require_database_url(),
             sengchong_static_dir=BASE_DIR / "sengchong" / "static",
             sengchong_template_dir=BASE_DIR / "sengchong" / "templates",
             flask_secret_key=env(

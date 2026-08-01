@@ -1,5 +1,5 @@
 """
-Alembic environment for the ERP-owned database (erp_data.db today, Postgres later).
+Alembic environment for the ERP-owned Postgres database.
 
 This intentionally does NOT import the Flask app: migrations must be runnable
 during deploy without the AutoCount SDK bridge or a live SQL Server. It only
@@ -8,7 +8,7 @@ needs the model metadata and a database URL.
 The URL comes from, in order of precedence:
   1. -x db_url=... on the alembic command line
   2. the DATABASE_URL environment variable (the same one the app reads)
-  3. sqlite:///<repo>/erp_data.db
+  and is required -- there is no local fallback.
 """
 
 import os
@@ -43,7 +43,13 @@ def get_url():
     from_cli = context.get_x_argument(as_dictionary=True).get("db_url")
     if from_cli:
         return from_cli
-    return os.getenv("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'erp_data.db'}"
+    url = os.getenv("DATABASE_URL", "").strip()
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Migrations run against Postgres only; "
+            "pass -x db_url=... to override."
+        )
+    return url
 
 
 def run_migrations_offline():

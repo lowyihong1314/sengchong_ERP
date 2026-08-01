@@ -63,7 +63,7 @@ class EmployeeDataStore:
         if not include_inactive:
             query = query.where(ErpEmployee.status == "Active")
         employees = db.session.scalars(
-            query.order_by(ErpEmployee.status, ErpEmployee.name)
+            query.order_by(ErpEmployee.status, ErpEmployee.name, ErpEmployee.employee_code)
         )
         return [self._public_employee(employee) for employee in employees]
 

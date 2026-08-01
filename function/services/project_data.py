@@ -126,7 +126,10 @@ class ProjectDataStore:
         projects = db.session.scalars(
             db.select(ErpProject)
             .where(ErpProject.company == _normalize_company(company))
-            .order_by(ErpProject.updated_at.desc())
+            # project_code breaks the tie: most projects were created in one
+            # batch and share updated_at to the second, and without a second
+            # key Postgres is free to return them in any order at all.
+            .order_by(ErpProject.updated_at.desc(), ErpProject.project_code)
         )
         return [self._public_project(project) for project in projects]
 
@@ -224,7 +227,7 @@ class ProjectDataStore:
                 db.func.lower(ErpProjectDocument.doc_no) == db.func.lower(target),
             )
             .distinct()
-            .order_by(ErpProject.updated_at.desc())
+            .order_by(ErpProject.updated_at.desc(), ErpProject.project_code)
         )
         return [self._public_project(project) for project in projects]
 

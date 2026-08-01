@@ -19,8 +19,9 @@ through the AutoCount SDK.
 DATABASE_URL=postgresql+psycopg://erp:<password>@127.0.0.1:5432/erp
 ```
 
-Leave `DATABASE_URL` unset and the app falls back to the local SQLite file --
-useful for a throwaway copy, not for production.
+`DATABASE_URL` is required and has no fallback. The tightened columns below
+cannot be held faithfully by SQLite, so a fallback would produce a database the
+app appears to accept and then reads wrong.
 
 ## Column types
 
@@ -41,8 +42,9 @@ timestamptz, or from integer to boolean, so without one the statements fail --
 on an empty table as well as a populated one.
 
 The revision is Postgres-only and raises on any other dialect. The legacy
-SQLite file was never migrated in place; `scripts/copy_to_postgres.py`
-converted values as it copied them.
+SQLite file was never migrated in place; a one-off `scripts/copy_to_postgres.py`
+converted values as it copied them. That script and the SQLite file have since
+been removed -- both are in git history if the record is ever needed.
 
 **The JSON API did not change.** Timestamps still serialise as ISO 8601 with an
 offset, an unset date is still `""`, money is still a JSON number, and the
@@ -59,14 +61,12 @@ sudo -u postgres createdb -O erp erp
 
 export DATABASE_URL="postgresql+psycopg://erp:<password>@127.0.0.1:5432/erp"
 python3 -m alembic upgrade head          # builds the schema, already tightened
-python3 scripts/copy_to_postgres.py      # moves the rows, converting as it goes
 
 systemctl --user restart erp-gateway.service
 ```
 
-`copy_to_postgres.py` refuses to write into a target that already has rows
-unless you pass `--truncate`, checks the target is at revision `22688ded425d`
-first, and compares row counts per table afterwards.
+A new machine starts from an empty database; restore a dump from
+`pg-backups/` if you want the data too.
 
 ## Things that bit, or would have
 
@@ -95,6 +95,9 @@ first, and compares row counts per table afterwards.
 
 ## Rollback
 
-The pre-cutover SQLite file is kept as `erp_data.db.bak-pre-pg-<timestamp>`.
-To go back, comment out `DATABASE_URL` in `.env` and restart -- but note that
-anything written since the cutover lives only in Postgres.
+There is no longer a rollback to SQLite: the file has been removed and the
+schema has since moved past what SQLite can hold. Recovery is from a Postgres
+dump -- see the restore drill in the README.
+
+The last pre-cutover SQLite files were uploaded to `b2://SengchongServer/erp/`
+by the nightly sync before deletion, so they remain there as an archive.

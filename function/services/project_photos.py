@@ -112,6 +112,8 @@ class ProjectPhotoStore:
             ErpProjectPhoto.is_cover.desc(),
             ErpProjectPhoto.sort_order.asc(),
             ErpProjectPhoto.created_at.desc(),
+            # Photos imported in one batch share sort_order and created_at.
+            ErpProjectPhoto.id,
         )
         return [self._photo_payload(photo, public=True) for photo in db.session.scalars(query)]
 
@@ -126,6 +128,7 @@ class ProjectPhotoStore:
                 ErpProjectPhoto.is_cover.desc(),
                 ErpProjectPhoto.sort_order.asc(),
                 ErpProjectPhoto.created_at.desc(),
+                ErpProjectPhoto.id,
             )
         )
         photos = [self._gallery_photo_payload(photo, project) for photo, project in rows]
@@ -467,6 +470,7 @@ class ProjectPhotoStore:
                 ErpProjectPhoto.is_cover.desc(),
                 ErpProjectPhoto.sort_order.asc(),
                 ErpProjectPhoto.created_at.desc(),
+                ErpProjectPhoto.id,
             )
         )
 

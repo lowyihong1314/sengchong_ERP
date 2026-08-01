@@ -100,9 +100,13 @@ The engine is chosen by one environment variable, read in `function/config.py`
 and reused by `migrations/env.py`:
 
 ```bash
-DATABASE_URL=postgresql+psycopg://erp:pass@127.0.0.1:5432/erp   # production
-DATABASE_URL=                                                   # unset -> local sqlite copy
+DATABASE_URL=postgresql+psycopg://erp:pass@127.0.0.1:5432/erp
 ```
+
+Required, with no fallback. The schema uses `timestamptz`, `date`, `numeric`
+and `boolean` columns that SQLite cannot hold faithfully, so a fallback would
+quietly produce a database the app appears to accept and then reads wrong.
+Starting without it raises instead.
 
 `function/services/values.py` converts between the typed columns
 (`timestamptz`, `date`, `numeric`, `boolean`) and what the JSON API exposes, so
@@ -240,6 +244,37 @@ Smoke test:
 ```bash
 curl -I http://127.0.0.1:5000/
 curl http://127.0.0.1:5000/health
+```
+
+## Backups
+
+`~/bin/backup-erp-to-b2.sh`, triggered nightly at 04:00 by the Windows task
+`\Backup ERP and AutoCount to B2` (the 03:00 task dumps AutoCount's SQL Server
+into `sqlserver-backups/` first).
+
+Each run writes a dated `pg_dump` to `pg-backups/erp-<timestamp>.sql.gz`,
+checks the dump actually contains the expected tables before trusting it,
+prunes to the newest 14 locally, then syncs the whole ERP directory -- dumps,
+project photos under `var/`, AutoCount `.bak` files, code -- to
+`b2://SengchongServer/erp/`.
+
+Dumps are dated rather than overwritten so B2 keeps history, and the sync
+compares by modification time rather than size: a database dump can change
+content while keeping the same byte count, and a size-only comparison would
+skip it.
+
+Credentials come from `~/.pgpass` (mode 600), so the password never reaches
+the process list.
+
+### Restore drill
+
+Run this occasionally. A backup nobody has restored is not a backup.
+
+```bash
+sudo -u postgres createdb -O erp erp_restore_test
+gzip -dc pg-backups/erp-<timestamp>.sql.gz | psql -h 127.0.0.1 -U erp -d erp_restore_test
+# compare row counts and content against the live database, then
+sudo -u postgres dropdb erp_restore_test
 ```
 
 ## Nginx Routing
