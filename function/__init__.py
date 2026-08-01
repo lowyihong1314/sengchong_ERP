@@ -3,7 +3,14 @@ from flask import Flask
 from models import db
 
 from .config import Settings
-from .routes.api import api_bp
+from .routes.auth import auth_bp
+from .routes.autocount import autocount_bp
+from .routes.health import health_bp
+from .routes.projects import projects_bp
+from .routes.public import public_bp
+from .routes.rdp import rdp_bp
+from .routes.users import users_bp
+from .routes.website import website_bp
 from .routes.frontend import frontend_bp
 from .routes.sengchong import sengchong_bp
 from .sessions import SessionStore
@@ -46,7 +53,17 @@ def create_app():
     with app.app_context():
         app.extensions["sengchong_content"].ensure_defaults()
 
-    app.register_blueprint(api_bp)
+    for blueprint in (
+        health_bp,
+        auth_bp,
+        users_bp,
+        rdp_bp,
+        website_bp,
+        projects_bp,
+        public_bp,
+        autocount_bp,
+    ):
+        app.register_blueprint(blueprint)
     app.register_blueprint(sengchong_bp)
     app.register_blueprint(frontend_bp)
 
