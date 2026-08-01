@@ -1,4 +1,4 @@
-import { readValue } from "./format.js";
+import { isFlagOn, readValue } from "./format.js";
 
 export function getDocumentCandidateKey(candidate) {
   return `${readValue(candidate, "module")}:${readValue(candidate, "docNo")}`;
@@ -261,4 +261,18 @@ export function removeDocumentValue(currentValue, removeValue) {
   return getDocumentList(currentValue)
     .filter((item) => item.toLowerCase() !== target)
     .join(", ");
+}
+
+/**
+ * Build an edit form from a loaded detail record, using the module's own
+ * formFields as the field list. Modules with extra shaping (projects folds
+ * several document-number lists into single inputs) keep their own builder.
+ */
+export function getFormFromDetail(module, detail, editKey) {
+  const form = { __mode: "edit", __editKey: editKey || "" };
+  for (const field of module.formFields || []) {
+    const value = readValue(detail, field.name);
+    form[field.name] = field.type === "checkbox" ? isFlagOn(value) : value ?? "";
+  }
+  return form;
 }

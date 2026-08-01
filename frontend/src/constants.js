@@ -41,7 +41,7 @@ export const PROJECT_LINK_MODULES = new Set([
 
 // Modules whose data this ERP owns. Everything else is an AutoCount
 // passthrough under /api/autocount.
-export const ERP_OWNED_MODULES = new Set(["projects", "employees"]);
+export const ERP_OWNED_MODULES = new Set(["projects", "employees", "salary"]);
 
 export const EMPLOYEE_POSITIONS = [
   "设计",
@@ -54,6 +54,7 @@ export const EMPLOYEE_POSITIONS = [
   "司机",
 ];
 export const EMPLOYEE_STATUSES = ["Active", "On Leave", "Resigned"];
+export const PAY_TYPES = ["Monthly", "Daily", "Hourly"];
 
 // The sidebar is grouped; moduleKeys is derived so there is one source of
 // truth for "which module keys exist" (routing validates against it).
@@ -71,7 +72,7 @@ export const MODULE_GROUPS = [
   },
   { key: "banking", label: "Banking", modules: ["cash-book", "bank-transactions"] },
   { key: "masters", label: "Masters", modules: ["items", "debtors", "creditors"] },
-  { key: "employees", label: "Employees", modules: ["employees"] },
+  { key: "employees", label: "Employees", modules: ["employees", "salary"] },
   {
     key: "system",
     label: "System",

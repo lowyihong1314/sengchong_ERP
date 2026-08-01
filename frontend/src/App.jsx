@@ -24,6 +24,7 @@ import { requestJson } from "./lib/api.js";
 import { getBankReconState, getBankTransactionKey } from "./lib/banking.js";
 import {
   applyItemToLine,
+  getFormFromDetail,
   cleanFormPayload,
   findDebtor,
   getDocumentCandidateKey,
@@ -1296,11 +1297,16 @@ export function App() {
   }
 
   function openProjectEdit() {
-    if (activeModule !== "projects" || !detail) return;
-    const nextFormData = getProjectFormFromDetail(detail);
+    if (!active?.editable || !detail) return;
+    // Projects fold several document-number lists into single inputs, so they
+    // keep a bespoke builder; everything else is driven by formFields.
+    const nextFormData =
+      activeModule === "projects"
+        ? getProjectFormFromDetail(detail)
+        : getFormFromDetail(active, detail, detailKey);
     const nextStatus = {
       tone: "",
-      text: `Edit ${readValue(detail, "projectCode") || "Project"}`,
+      text: `Edit ${readValue(detail, active.rowKey) || active.singular}`,
     };
     if (hasDebtorField(active) && !debtorsLoaded) {
       loadDebtors();
@@ -1768,7 +1774,7 @@ export function App() {
 
     const projectKey = detailKey || readValue(detail, "projectCode");
     if (!projectKey) {
-      setStatus({ tone: "error", text: "Project key is missing" });
+      setStatus({ tone: "error", text: `${active.singular} key is missing` });
       return false;
     }
 
@@ -1815,7 +1821,7 @@ export function App() {
 
     const projectKey = detailKey || readValue(detail, "projectCode");
     if (!projectKey) {
-      setStatus({ tone: "error", text: "Project key is missing" });
+      setStatus({ tone: "error", text: `${active.singular} key is missing` });
       return false;
     }
 
@@ -2022,7 +2028,7 @@ export function App() {
     const payload = cleanFormPayload(formData);
     const updateKey = formData?.__editKey || detailKey || readValue(formData, active.rowKey);
     if (formMode === "edit" && !updateKey) {
-      setStatus({ tone: "error", text: "Project key is missing" });
+      setStatus({ tone: "error", text: `${active.singular} key is missing` });
       return;
     }
     const savingStatus = { tone: "", text: "Saving..." };

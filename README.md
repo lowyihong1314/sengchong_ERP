@@ -35,6 +35,7 @@ models/           SQLAlchemy models, one module per domain
   __init__.py       db = SQLAlchemy()
   user_data.py      ErpUser
   employee_data.py  ErpEmployee
+  salary_data.py    ErpEmployeeSalary
   sessions.py       ErpSession
   project_data.py   ErpProject, ErpProjectDocument
   project_photos.py ErpProjectPhoto
@@ -45,7 +46,7 @@ function/         the app package
   routes/           blueprints
   services/         AutoCount SDK bridge, SQL reader, ERP data stores
   services/values.py  DB value <-> API JSON conversions
-migrations/       Alembic; head revision 54a69eb60389
+migrations/       Alembic; head revision 5be2a3235d58
 ```
 
 `models/<name>.py` and `function/services/<name>.py` are deliberately named in
@@ -70,6 +71,24 @@ Two consequences worth remembering:
 
 Subcontractors are not employees. They are AutoCount creditors billed through
 AP invoices; recording them here would make labour cost and AP disagree.
+
+### Payroll
+
+`ErpEmployeeSalary` is one row per employee holding what they are paid
+(`Monthly`/`Daily`/`Hourly` plus a rate -- the workshop is often day-rated
+while the office is monthly), their EPF/SOCSO/tax numbers, and their bank
+details. Admin only, on reads as well as writes.
+
+No statutory amount is stored per employee. EPF, SOCSO, EIS and PCB are
+Malaysian rates set by KWSP, PERKESO and LHDN, they change, and they belong in
+maintained rate tables that a payroll run reads -- not copied onto every
+employee row, and not hardcoded in the calculation. Those tables ship with the
+payroll run screens; until then the salary screen records inputs only and
+computes nothing.
+
+`epf_contributing` and `socso_contributing` exist because not everyone
+contributes, and that decision belongs to the person rather than to the rate
+table.
 
 ### Database
 
@@ -276,6 +295,11 @@ POST   /api/employees                      admin only
 GET    /api/employees/:code
 PATCH  /api/employees/:code                admin only
 GET    /api/employees/meta                 positions and statuses
+
+GET    /api/salary                         pay setup -- admin only, every verb
+GET    /api/salary/:employeeCode
+PATCH  /api/salary/:employeeCode            creates or updates, one row per person
+GET    /api/salary/meta
 
 GET    /api/projects                       ERP-owned project/job layer
 POST   /api/projects

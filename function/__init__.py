@@ -9,6 +9,7 @@ from .routes.employees import employees_bp
 from .routes.health import health_bp
 from .routes.projects import projects_bp
 from .routes.public import public_bp
+from .routes.salary import salary_bp
 from .routes.rdp import rdp_bp
 from .routes.users import users_bp
 from .routes.website import website_bp
@@ -18,6 +19,7 @@ from .sessions import SessionStore
 from .services.autocount_sdk import AutoCountSdk
 from .services.employee_data import EmployeeDataStore
 from .services.project_data import ProjectDataStore
+from .services.salary_data import SalaryDataStore
 from .services.project_photos import ProjectPhotoStore
 from .services.sengchong_content import SengchongContentStore
 from .services.sql_reader import SqlReadService
@@ -48,6 +50,7 @@ def create_app():
     app.extensions["user_data"] = UserDataStore()
     app.extensions["employee_data"] = EmployeeDataStore()
     app.extensions["project_data"] = ProjectDataStore()
+    app.extensions["salary_data"] = SalaryDataStore()
     app.extensions["project_photos"] = ProjectPhotoStore(settings.base_dir)
     app.extensions["sengchong_content"] = SengchongContentStore()
 
@@ -64,6 +67,7 @@ def create_app():
         website_bp,
         projects_bp,
         employees_bp,
+        salary_bp,
         public_bp,
         autocount_bp,
     ):

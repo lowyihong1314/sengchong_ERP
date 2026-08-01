@@ -81,10 +81,10 @@ export function DetailPage({
           <p>{module.singular} detail</p>
         </div>
         <div className="page-header-actions">
-          {moduleKey === "projects" && detail && onEditProject && (
+          {module.editable && detail && onEditProject && (
             <button className="secondary-button" type="button" onClick={onEditProject}>
               <Pencil aria-hidden="true" size={16} />
-              Edit Project
+              Edit {module.singular}
             </button>
           )}
           {canExportPdf && (
