@@ -10,10 +10,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .common import (
     _project_photos,
     _require_session,

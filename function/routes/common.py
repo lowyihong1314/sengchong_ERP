@@ -5,11 +5,6 @@ session guards every protected endpoint calls.
 
 from flask import Blueprint, current_app, jsonify, request
 
-from ..services import rdp_allow_list
-
-
-api_bp = Blueprint("api", __name__)
-
 
 def _settings():
     return current_app.config["SETTINGS"]

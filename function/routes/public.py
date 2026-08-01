@@ -5,10 +5,7 @@ accounting, cost or document data -- only what the public page renders.
 
 from flask import Blueprint, jsonify, request, send_file
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .common import _project_photos, _sengchong_content
 
 public_bp = Blueprint("public", __name__, url_prefix="/public-api")

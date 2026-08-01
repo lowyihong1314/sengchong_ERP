@@ -8,10 +8,7 @@ from pathlib import Path
 
 from flask import Blueprint, after_this_request, current_app, jsonify, request, send_file
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .auth import auth_login
 from .common import (
     _refresh_requested,

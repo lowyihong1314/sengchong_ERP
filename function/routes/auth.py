@@ -4,10 +4,7 @@ Login, the current session, and switching the active AutoCount company.
 
 from flask import Blueprint, jsonify, request
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .common import (
     _bearer_token,
     _company_databases,

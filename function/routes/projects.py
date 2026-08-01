@@ -8,10 +8,7 @@ from difflib import SequenceMatcher
 
 from flask import Blueprint, jsonify, request, send_file
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .common import (
     _project_data,
     _project_photos,

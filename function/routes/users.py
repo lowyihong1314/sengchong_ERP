@@ -4,11 +4,7 @@ ERP user accounts. Admin only; these are not AutoCount logins.
 
 from flask import Blueprint, jsonify, request
 
-from ..services import rdp_allow_list
-
-
-api_bp = Blueprint("api", __name__)
-from .common import _find_company, _require_admin_session, _user_data
+from .common import _find_company, _require_admin_session, _sessions, _user_data
 
 users_bp = Blueprint("users", __name__, url_prefix="/api")
 
@@ -67,4 +63,8 @@ def delete_user(username):
         return jsonify({"error": str(error)}), 400
     if not deleted:
         return jsonify({"error": "User not found."}), 404
-    return jsonify({"deleted": deleted})
+
+    # A deleted account is already refused at lookup time, but clear its
+    # tokens rather than leaving dead rows in erp_sessions.
+    signed_out = _sessions().delete_for_user(deleted["username"])
+    return jsonify({"deleted": deleted, "signedOutSessions": signed_out})

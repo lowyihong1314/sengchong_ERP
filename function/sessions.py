@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from models import db
 from models.sessions import ErpSession
+from models.user_data import ErpUser
 
 from .services.values import now
 
@@ -11,6 +12,12 @@ class SessionStore:
     """
     Web/API session tokens, stored in the database rather than in process
     memory so gunicorn can run more than one worker.
+
+    A session carries per-login state -- which AutoCount company this token is
+    currently looking at, and when it expires. It does *not* carry authority:
+    display name and role are read back from erp_users on every lookup, so
+    changing someone's role or deleting their account takes effect on their
+    next request rather than whenever the token happens to expire.
     """
 
     def __init__(self, ttl_seconds):
@@ -24,6 +31,8 @@ class SessionStore:
                 token=token,
                 database_name=database,
                 username=username,
+                # Recorded for the audit trail -- "what were they when they
+                # signed in" -- and deliberately not what authorisation reads.
                 display_name=display_name or username,
                 role=role,
                 server=server or "",
@@ -41,13 +50,28 @@ class SessionStore:
 
         self.cleanup()
         session = db.session.get(ErpSession, token)
-        return self._to_session(session) if session else None
+        if not session:
+            return None
+
+        return self._with_user(session)
 
     def delete(self, token):
         if not token:
             return
         db.session.execute(db.delete(ErpSession).where(ErpSession.token == token))
         db.session.commit()
+
+    def delete_for_user(self, username):
+        """Drop every session belonging to one account. Returns how many."""
+        target = str(username or "").strip().lower()
+        if not target:
+            return 0
+
+        result = db.session.execute(
+            db.delete(ErpSession).where(db.func.lower(ErpSession.username) == target)
+        )
+        db.session.commit()
+        return result.rowcount or 0
 
     def cleanup(self):
         db.session.execute(db.delete(ErpSession).where(ErpSession.expires_at <= now()))
@@ -65,15 +89,27 @@ class SessionStore:
         session.expires_at = now() + timedelta(seconds=self.ttl_seconds)
         db.session.commit()
 
-        return self._to_session(session)
+        return self._with_user(session)
 
-    @staticmethod
-    def _to_session(session):
+    def _with_user(self, session):
+        """
+        Resolve a session row against the account it belongs to.
+
+        Returns None when the account is gone, and deletes the orphaned token
+        on the way out: removing a user should sign them out, not leave a
+        working credential behind.
+        """
+        user = db.session.get(ErpUser, session.username)
+        if not user:
+            db.session.delete(session)
+            db.session.commit()
+            return None
+
         return {
             "database": session.database_name,
-            "username": session.username,
-            "display_name": session.display_name or session.username,
-            "role": session.role or "user",
+            "username": user.username,
+            "display_name": user.display_name or user.username,
+            "role": user.role or "user",
             "server": session.server or "",
             "expires_at": session.expires_at,
         }

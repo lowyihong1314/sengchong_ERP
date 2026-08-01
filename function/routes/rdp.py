@@ -7,7 +7,6 @@ from flask import Blueprint, jsonify, request
 from ..services import rdp_allow_list
 
 
-api_bp = Blueprint("api", __name__)
 from .common import _require_session
 
 rdp_bp = Blueprint("rdp", __name__, url_prefix="/api")

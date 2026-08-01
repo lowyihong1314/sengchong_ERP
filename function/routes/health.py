@@ -4,10 +4,7 @@ Liveness endpoint and nothing else.
 
 from flask import Blueprint, jsonify
 
-from ..services import rdp_allow_list
 
-
-api_bp = Blueprint("api", __name__)
 from .common import _settings, _sql_reader
 
 health_bp = Blueprint("health", __name__)
