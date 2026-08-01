@@ -1,6 +1,14 @@
 import json
 from datetime import datetime, timezone
 
+from models import db
+from models.sengchong_content import (
+    ErpWebsiteAuditLog,
+    SengchongContact,
+    SengchongService,
+    SengchongSetting,
+)
+
 
 DEFAULT_SERVICES = (
     {"no": 1, "service_name": "电视机橱", "bg": "1.jpg"},
@@ -25,6 +33,7 @@ DEFAULT_FOOTER = {
     "phone": "012-654 5265",
     "business_hours": "Monday to Friday 10am to 6pm",
 }
+FOOTER_KEYS = frozenset(DEFAULT_FOOTER)
 
 
 def _now_iso():
@@ -32,59 +41,45 @@ def _now_iso():
 
 
 class SengchongContentStore:
-    def __init__(self, db):
-        self.db = db
-        self.db.initialize()
-        self.ensure_defaults()
+    """
+    The public site's content: service cards, contacts and footer settings.
+
+    sengchong.com only renders; everything here is edited from the ERP, and
+    every edit is written to the website audit log.
+    """
 
     def ensure_defaults(self):
-        with self.db.transaction() as conn:
-            has_services = conn.execute("SELECT 1 FROM sengchong_services LIMIT 1").fetchone()
-            has_contacts = conn.execute("SELECT 1 FROM sengchong_contacts LIMIT 1").fetchone()
+        """
+        Seed first-run content. Called from create_app inside an app context,
+        not from __init__, because db.session needs one.
+        """
+        has_services = db.session.scalar(db.select(SengchongService.no).limit(1))
+        has_contacts = db.session.scalar(db.select(SengchongContact.no).limit(1))
 
-            if not has_services:
-                for service in DEFAULT_SERVICES:
-                    conn.execute(
-                        """
-                        INSERT INTO sengchong_services (no, service_name, bg)
-                        VALUES (?, ?, ?)
-                        """,
-                        (service["no"], service["service_name"], service["bg"]),
-                    )
-            if not has_contacts:
-                for contact in DEFAULT_CONTACTS:
-                    conn.execute(
-                        """
-                        INSERT INTO sengchong_contacts (no, name, number, bg)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        (contact["no"], contact["name"], contact["number"], contact["bg"]),
-                    )
+        if not has_services:
+            db.session.add_all(SengchongService(**service) for service in DEFAULT_SERVICES)
+        if not has_contacts:
+            db.session.add_all(SengchongContact(**contact) for contact in DEFAULT_CONTACTS)
 
-            for key, value in DEFAULT_FOOTER.items():
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO sengchong_settings (key, value, updated_at)
-                    VALUES (?, ?, ?)
-                    """,
-                    (key, str(value), _now_iso()),
-                )
+        # INSERT OR IGNORE: existing keys keep their edited value.
+        existing_keys = set(db.session.scalars(db.select(SengchongSetting.key)))
+        for key, value in DEFAULT_FOOTER.items():
+            if key not in existing_keys:
+                db.session.add(SengchongSetting(key=key, value=str(value), updated_at=_now_iso()))
+
+        db.session.commit()
 
     def get_home_page_data(self):
-        with self.db.connect() as conn:
-            services = [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT no, service_name, bg FROM sengchong_services ORDER BY no"
-                ).fetchall()
-            ]
-            contacts = [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT no, name, number, bg FROM sengchong_contacts ORDER BY no"
-                ).fetchall()
-            ]
-        return {"our_service": services, "contact_us": contacts}
+        services = db.session.scalars(db.select(SengchongService).order_by(SengchongService.no))
+        contacts = db.session.scalars(db.select(SengchongContact).order_by(SengchongContact.no))
+        return {
+            "our_service": [
+                {"no": s.no, "service_name": s.service_name, "bg": s.bg} for s in services
+            ],
+            "contact_us": [
+                {"no": c.no, "name": c.name, "number": c.number, "bg": c.bg} for c in contacts
+            ],
+        }
 
     def get_content(self):
         home_page_data = self.get_home_page_data()
@@ -95,190 +90,112 @@ class SengchongContentStore:
         }
 
     def update_service(self, no, *, service_name=None, bg=None, company="", username=""):
-        updates = []
-        values = []
         field_changes = {}
         if service_name is not None:
-            updates.append("service_name = ?")
             field_changes["service_name"] = str(service_name).strip()
-            values.append(field_changes["service_name"])
         if bg is not None:
-            updates.append("bg = ?")
             field_changes["bg"] = str(bg).strip()
-            values.append(field_changes["bg"])
-        if not updates:
+        if not field_changes:
             return
-        values.append(int(no))
-        with self.db.transaction() as conn:
-            old_row = conn.execute(
-                "SELECT no, service_name, bg FROM sengchong_services WHERE no = ?",
-                (int(no),),
-            ).fetchone()
-            conn.execute(
-                f"UPDATE sengchong_services SET {', '.join(updates)} WHERE no = ?",
-                values,
-            )
-            if old_row:
-                self._insert_change_audit(
-                    conn,
-                    company,
-                    username,
-                    "website_service_changed",
-                    "website_service",
-                    str(no),
-                    old_row,
-                    field_changes,
-                )
+
+        service = db.session.get(SengchongService, int(no))
+        if service is None:
+            # Nothing to update and nothing to audit, matching the old
+            # UPDATE ... WHERE no = ? that matched no rows.
+            return
+
+        before = {"service_name": service.service_name, "bg": service.bg}
+        for field, value in field_changes.items():
+            setattr(service, field, value)
+        self._audit_changes(
+            company, username, "website_service_changed", "website_service",
+            str(no), before, field_changes,
+        )
+        db.session.commit()
 
     def update_contact(self, no, *, name=None, number=None, bg=None, company="", username=""):
-        updates = []
-        values = []
         field_changes = {}
         if name is not None:
-            updates.append("name = ?")
             field_changes["name"] = str(name).strip()
-            values.append(field_changes["name"])
         if number is not None:
-            updates.append("number = ?")
             field_changes["number"] = str(number).strip()
-            values.append(field_changes["number"])
         if bg is not None:
-            updates.append("bg = ?")
             field_changes["bg"] = str(bg).strip()
-            values.append(field_changes["bg"])
-        if not updates:
+        if not field_changes:
             return
-        values.append(int(no))
-        with self.db.transaction() as conn:
-            old_row = conn.execute(
-                "SELECT no, name, number, bg FROM sengchong_contacts WHERE no = ?",
-                (int(no),),
-            ).fetchone()
-            conn.execute(
-                f"UPDATE sengchong_contacts SET {', '.join(updates)} WHERE no = ?",
-                values,
-            )
-            if old_row:
-                self._insert_change_audit(
-                    conn,
-                    company,
-                    username,
-                    "website_contact_changed",
-                    "website_contact",
-                    str(no),
-                    old_row,
-                    field_changes,
-                )
+
+        contact = db.session.get(SengchongContact, int(no))
+        if contact is None:
+            return
+
+        before = {"name": contact.name, "number": contact.number, "bg": contact.bg}
+        for field, value in field_changes.items():
+            setattr(contact, field, value)
+        self._audit_changes(
+            company, username, "website_contact_changed", "website_contact",
+            str(no), before, field_changes,
+        )
+        db.session.commit()
 
     def get_footer(self):
         footer = dict(DEFAULT_FOOTER)
-        with self.db.connect() as conn:
-            rows = conn.execute("SELECT key, value FROM sengchong_settings").fetchall()
-        for row in rows:
-            footer[row["key"]] = row["value"]
+        for setting in db.session.scalars(db.select(SengchongSetting)):
+            footer[setting.key] = setting.value
         return footer
 
     def update_footer(self, payload, *, company="", username=""):
-        allowed = {
-            "year",
-            "company_name",
-            "registration_no",
-            "address",
-            "contact_person",
-            "phone",
-            "business_hours",
-        }
         now = _now_iso()
-        with self.db.transaction() as conn:
-            old_values = {
-                row["key"]: row["value"]
-                for row in conn.execute("SELECT key, value FROM sengchong_settings").fetchall()
-            }
-            for key in allowed:
-                if key not in payload:
-                    continue
-                next_value = str(payload.get(key) or "")
-                conn.execute(
-                    """
-                    INSERT INTO sengchong_settings (key, value, updated_at)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(key) DO UPDATE SET
-                        value = excluded.value,
-                        updated_at = excluded.updated_at
-                    """,
-                    (key, next_value, now),
-                )
-                self._insert_audit_if_changed(
-                    conn,
-                    company,
-                    username,
-                    "website_footer_changed",
-                    "website_footer",
-                    "footer",
-                    key,
-                    old_values.get(key, DEFAULT_FOOTER.get(key, "")),
-                    next_value,
-                )
+        settings = {s.key: s for s in db.session.scalars(db.select(SengchongSetting))}
+        old_values = {key: setting.value for key, setting in settings.items()}
 
-    def _insert_change_audit(
-        self,
-        conn,
-        company,
-        username,
-        action,
-        entity_type,
-        entity_id,
-        old_row,
-        field_changes,
-    ):
-        for field_name, new_value in field_changes.items():
-            self._insert_audit_if_changed(
-                conn,
-                company,
-                username,
-                action,
-                entity_type,
-                entity_id,
-                field_name,
-                old_row[field_name],
-                new_value,
+        for key in FOOTER_KEYS:
+            if key not in payload:
+                continue
+            next_value = str(payload.get(key) or "")
+
+            setting = settings.get(key)
+            if setting is None:
+                setting = SengchongSetting(key=key, value=next_value, updated_at=now)
+                db.session.add(setting)
+            else:
+                setting.value = next_value
+                setting.updated_at = now
+
+            self._audit_if_changed(
+                company, username, "website_footer_changed", "website_footer", "footer",
+                key, old_values.get(key, DEFAULT_FOOTER.get(key, "")), next_value,
             )
 
-    def _insert_audit_if_changed(
-        self,
-        conn,
-        company,
-        username,
-        action,
-        entity_type,
-        entity_id,
-        field_name,
-        old_value,
-        new_value,
+        db.session.commit()
+
+    def _audit_changes(self, company, username, action, entity_type, entity_id, before, field_changes):
+        for field_name, new_value in field_changes.items():
+            self._audit_if_changed(
+                company, username, action, entity_type, entity_id,
+                field_name, before[field_name], new_value,
+            )
+
+    def _audit_if_changed(
+        self, company, username, action, entity_type, entity_id, field_name, old_value, new_value
     ):
         old_text = self._audit_value(old_value)
         new_text = self._audit_value(new_value)
         if old_text == new_text:
             return
-        conn.execute(
-            """
-            INSERT INTO erp_website_audit_log (
-                company, action, entity_type, entity_id, project_code, field_name,
-                old_value, new_value, username, created_at
+
+        db.session.add(
+            ErpWebsiteAuditLog(
+                company=company or "",
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                project_code="",
+                field_name=field_name,
+                old_value=old_text,
+                new_value=new_text,
+                username=username or "",
+                created_at=_now_iso(),
             )
-            VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?)
-            """,
-            (
-                company or "",
-                action,
-                entity_type,
-                entity_id,
-                field_name,
-                old_text,
-                new_text,
-                username or "",
-                _now_iso(),
-            ),
         )
 
     @staticmethod

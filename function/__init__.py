@@ -38,16 +38,18 @@ def create_app():
     erp_db = ErpDatabase(settings.erp_db_path)
     erp_db.initialize()
     app.extensions["erp_db"] = erp_db
-    app.extensions["sessions"] = SessionStore(
-        settings.session_ttl_seconds,
-        erp_db,
-    )
+    app.extensions["sessions"] = SessionStore(settings.session_ttl_seconds)
     app.extensions["autocount_sdk"] = AutoCountSdk(settings)
     app.extensions["sql_reader"] = SqlReadService(settings)
     app.extensions["user_data"] = UserDataStore()
     app.extensions["project_data"] = ProjectDataStore(erp_db)
     app.extensions["project_photos"] = ProjectPhotoStore(erp_db, settings.base_dir)
-    app.extensions["sengchong_content"] = SengchongContentStore(erp_db)
+    app.extensions["sengchong_content"] = SengchongContentStore()
+
+    # Seeding needs db.session, so it runs in an app context rather than in
+    # the store's constructor.
+    with app.app_context():
+        app.extensions["sengchong_content"].ensure_defaults()
 
     app.register_blueprint(api_bp)
     app.register_blueprint(sengchong_bp)

@@ -2,48 +2,39 @@ import secrets
 import time
 from datetime import datetime, timezone
 
+from models import db
+from models.sessions import ErpSession
+
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class SessionStore:
-    def __init__(self, ttl_seconds, db):
+    """
+    Web/API session tokens, stored in the database rather than in process
+    memory so gunicorn can run more than one worker.
+    """
+
+    def __init__(self, ttl_seconds):
         self.ttl_seconds = ttl_seconds
-        self.db = db
-        self.db.initialize()
 
     def create(self, *, database, username, display_name="", role="user", server=""):
         token = secrets.token_urlsafe(32)
-        session = {
-            "database": database,
-            "username": username,
-            "display_name": display_name or username,
-            "role": role,
-            "server": server or "",
-            "expires_at": time.time() + self.ttl_seconds,
-            "created_at": _now_iso(),
-        }
 
-        with self.db.transaction() as conn:
-            conn.execute(
-                """
-                INSERT INTO erp_sessions (
-                    token, database_name, username, display_name, role, server, expires_at, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    token,
-                    session["database"],
-                    session["username"],
-                    session["display_name"],
-                    session["role"],
-                    session["server"],
-                    session["expires_at"],
-                    session["created_at"],
-                ),
+        db.session.add(
+            ErpSession(
+                token=token,
+                database_name=database,
+                username=username,
+                display_name=display_name or username,
+                role=role,
+                server=server or "",
+                expires_at=time.time() + self.ttl_seconds,
+                created_at=_now_iso(),
             )
+        )
+        db.session.commit()
 
         return token
 
@@ -52,57 +43,40 @@ class SessionStore:
             return None
 
         self.cleanup()
-        with self.db.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT database_name, username, display_name, role, server, expires_at
-                FROM erp_sessions
-                WHERE token = ?
-                """,
-                (token,),
-            ).fetchone()
-
-        return self._row_to_session(row) if row else None
+        session = db.session.get(ErpSession, token)
+        return self._to_session(session) if session else None
 
     def delete(self, token):
         if not token:
             return
-        with self.db.transaction() as conn:
-            conn.execute("DELETE FROM erp_sessions WHERE token = ?", (token,))
+        db.session.execute(db.delete(ErpSession).where(ErpSession.token == token))
+        db.session.commit()
 
     def cleanup(self):
-        with self.db.transaction() as conn:
-            conn.execute("DELETE FROM erp_sessions WHERE expires_at <= ?", (time.time(),))
+        db.session.execute(db.delete(ErpSession).where(ErpSession.expires_at <= time.time()))
+        db.session.commit()
 
     def update_database(self, token, database):
-        next_expires_at = time.time() + self.ttl_seconds
-        with self.db.transaction() as conn:
-            conn.execute(
-                """
-                UPDATE erp_sessions
-                SET database_name = ?, expires_at = ?
-                WHERE token = ?
-                """,
-                (database, next_expires_at, token),
-            )
-            row = conn.execute(
-                """
-                SELECT database_name, username, display_name, role, server, expires_at
-                FROM erp_sessions
-                WHERE token = ?
-                """,
-                (token,),
-            ).fetchone()
+        session = db.session.get(ErpSession, token)
+        if not session:
+            # The UPDATE this replaces was a no-op for an unknown token, and
+            # the SELECT that followed returned nothing.
+            db.session.commit()
+            return None
 
-        return self._row_to_session(row) if row else None
+        session.database_name = database
+        session.expires_at = time.time() + self.ttl_seconds
+        db.session.commit()
+
+        return self._to_session(session)
 
     @staticmethod
-    def _row_to_session(row):
+    def _to_session(session):
         return {
-            "database": row["database_name"],
-            "username": row["username"],
-            "display_name": row["display_name"] or row["username"],
-            "role": row["role"] or "user",
-            "server": row["server"] or "",
-            "expires_at": row["expires_at"],
+            "database": session.database_name,
+            "username": session.username,
+            "display_name": session.display_name or session.username,
+            "role": session.role or "user",
+            "server": session.server or "",
+            "expires_at": session.expires_at,
         }
