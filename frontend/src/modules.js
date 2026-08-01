@@ -1059,8 +1059,9 @@ export const MODULES = {
     ],
     detailLineColumns: [],
     formFields: [
+      // No employee code field: the system issues it on create and it never
+      // changes. It still shows in the list and on the detail page.
       { name: "name", label: "Name", required: true, span: 2 },
-      { name: "employeeCode", label: "Employee Code" },
       { name: "position", label: "Position", type: "select", options: EMPLOYEE_POSITIONS },
       { name: "status", label: "Status", type: "select", options: EMPLOYEE_STATUSES },
       { name: "phone", label: "Phone" },
@@ -1075,7 +1076,6 @@ export const MODULES = {
     lineFields: [],
     payload: () => ({
       name: "",
-      employeeCode: "",
       position: EMPLOYEE_POSITIONS[0],
       status: EMPLOYEE_STATUSES[0],
       phone: "",

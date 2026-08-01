@@ -1,6 +1,8 @@
 import re
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from models import db
 from models.employee_data import ErpEmployee
 from models.user_data import ErpUser
@@ -20,8 +22,9 @@ POSITIONS = (
 )
 STATUSES = ("Active", "On Leave", "Resigned")
 
+# employee_code is not here on purpose: the system issues it and it never
+# changes afterwards. Everything else is editable.
 EMPLOYEE_COLUMNS = {
-    "employeeCode": "employee_code",
     "name": "name",
     "position": "position",
     "phone": "phone",
@@ -76,14 +79,12 @@ class EmployeeDataStore:
         if not fields.get("name"):
             raise ValueError("Employee name is required.")
 
-        code = fields.get("employeeCode") or self._next_employee_code()
-        self._ensure_unique_code(code)
         link = self._resolve_username(payload.get("username"))
 
         timestamp = now()
         employee = ErpEmployee(
             id=uuid.uuid4().hex,
-            employee_code=code,
+            employee_code="",  # filled in by _create_with_code below
             name=fields["name"],
             username=link,
             position=fields.get("position") or "",
@@ -99,9 +100,35 @@ class EmployeeDataStore:
             created_by=username or "",
             updated_by=username or "",
         )
-        db.session.add(employee)
-        db.session.commit()
-        return self._public_employee(employee)
+        return self._create_with_code(employee)
+
+    def _create_with_code(self, employee, attempts=5):
+        """
+        Issue the next code and insert.
+
+        Codes are allocated as max+1, which two simultaneous creates can read
+        the same value for. The unique constraint stops the duplicate reaching
+        the table; this retries around it rather than surfacing a 500.
+        """
+        for attempt in range(attempts):
+            # no_autoflush: reading max+1 issues a SELECT, and an autoflush on
+            # that SELECT would push the pending row -- still carrying the code
+            # that just collided -- straight back at the unique constraint,
+            # raising from here instead of from commit().
+            with db.session.no_autoflush:
+                employee.employee_code = self._next_employee_code()
+
+            db.session.add(employee)
+            try:
+                db.session.commit()
+                return self._public_employee(employee)
+            except IntegrityError:
+                # rollback detaches the pending row; the next pass re-adds it
+                # once it has a fresh code.
+                db.session.rollback()
+                if attempt == attempts - 1:
+                    raise ValueError("Could not allocate an employee code; try again.")
+        return None
 
     def update_employee(self, employee_key, username, payload):
         employee = self._find(employee_key)
@@ -110,13 +137,10 @@ class EmployeeDataStore:
 
         fields = self._normalize_payload(payload)
 
-        next_code = fields.get("employeeCode") or employee.employee_code
-        if _normalize_key(next_code) != _normalize_key(employee.employee_code):
-            self._ensure_unique_code(next_code, exclude_id=employee.id)
-        employee.employee_code = next_code
-
+        # employee_code is system-issued and stays put: it is how a person is
+        # referred to on paper, and renaming it would strand those references.
         for api_field, column in EMPLOYEE_COLUMNS.items():
-            if api_field == "employeeCode" or api_field not in fields:
+            if api_field not in fields:
                 continue
             setattr(employee, column, fields[api_field])
 
@@ -197,19 +221,6 @@ class EmployeeDataStore:
             if match:
                 current = max(current, int(match.group(1)))
         return f"{prefix}{current + 1:03d}"
-
-    def _ensure_unique_code(self, employee_code, exclude_id=None):
-        code = str(employee_code or "").strip()
-        if not code:
-            raise ValueError("Employee code is required.")
-
-        clash = db.session.scalars(
-            db.select(ErpEmployee).where(
-                db.func.lower(ErpEmployee.employee_code) == db.func.lower(code)
-            )
-        ).first()
-        if clash and clash.id != exclude_id:
-            raise ValueError(f"Employee code already exists: {employee_code}")
 
     @staticmethod
     def _public_employee(employee):

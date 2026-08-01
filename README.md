@@ -69,6 +69,11 @@ Two consequences worth remembering:
   own job sheet should not have to be an ERP admin.
 - Employees are retired by setting `status` to `Resigned`, never deleted.
   Project history refers to them.
+- `employee_code` is issued by the system (`EMP-001`, `EMP-002`, ...) and never
+  changes. A code supplied by a client is ignored on create and on update:
+  it is how somebody is referred to on paper, so renaming it would strand
+  those references. Codes are allocated as max+1 and retried on collision, so
+  two simultaneous creates cannot end up sharing one.
 
 Subcontractors are not employees. They are AutoCount creditors billed through
 AP invoices; recording them here would make labour cost and AP disagree.
