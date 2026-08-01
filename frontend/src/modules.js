@@ -1235,6 +1235,13 @@ export const MODULES = {
       lines: [],
     }),
   },
+  "work-day-sheet": {
+    title: "Daily Entry",
+    label: "Daily Entry",
+    meta: "Record the whole crew for one day",
+    icon: CalendarClock,
+    system: true,
+  },
   "user-management": {
     title: "User Management",
     label: "User Management",

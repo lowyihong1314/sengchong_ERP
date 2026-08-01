@@ -84,7 +84,7 @@ export const MODULE_GROUPS = [
   {
     key: "employees",
     label: "Employees",
-    modules: ["employees", "salary", "work-entries"],
+    modules: ["employees", "salary", "work-entries", "work-day-sheet"],
   },
   {
     key: "system",

@@ -19,6 +19,7 @@ import {
   PDF_EXPORT_MODULES,
   PROJECT_LINK_MODULES,
   TOKEN_STORAGE_KEY,
+  today,
 } from "./constants.js";
 import { requestJson } from "./lib/api.js";
 import { getBankReconState, getBankTransactionKey } from "./lib/banking.js";
@@ -73,6 +74,7 @@ import { useWebsiteAdmin } from "./hooks/useWebsiteAdmin.js";
 import { useAdminSettings } from "./hooks/useAdminSettings.js";
 import { useBankReconciliation } from "./hooks/useBankReconciliation.js";
 import { MODULES } from "./modules.js";
+import { DaySheetPage } from "./pages/DaySheetPage.jsx";
 import { DebtorDetailPage } from "./pages/DebtorDetailPage.jsx";
 import { DetailPage } from "./pages/DetailPage.jsx";
 import { ItemDetailPage } from "./pages/ItemDetailPage.jsx";
@@ -131,6 +133,12 @@ export function App() {
   const [projectFinancialSyncing, setProjectFinancialSyncing] = React.useState(false);
   const [projectDocumentUnlinking, setProjectDocumentUnlinking] = React.useState("");
   const [arPaymentSaving, setArPaymentSaving] = React.useState(false);
+  // Daily Entry: one editable sheet for a date + company, held here rather
+  // than in the page so switching tabs and coming back keeps the edits.
+  const [daySheetDate, setDaySheetDate] = React.useState(() => today());
+  const [daySheetRows, setDaySheetRows] = React.useState([]);
+  const [daySheetLoading, setDaySheetLoading] = React.useState(false);
+  const [daySheetSaving, setDaySheetSaving] = React.useState(false);
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
   // them even though they are created later in the render.
@@ -368,6 +376,40 @@ export function App() {
   };
 
 
+  const loadDaySheet = React.useCallback(
+    async (date, company, options = {}) => {
+      if (!token) return;
+
+      try {
+        setDaySheetLoading(true);
+        if (options.showStatus !== false) {
+          setStatus({ tone: "", text: "Loading daily entry..." });
+        }
+        const params = new URLSearchParams({ date, company });
+        const payload = await requestJson(`/api/work-entries/day?${params.toString()}`, {
+          headers: authHeaders(),
+        });
+        const rows = normalizeRows(payload);
+        setDaySheetRows(rows);
+        const nextStatus = {
+          tone: "ok",
+          text: `${rows.length} employee${rows.length === 1 ? "" : "s"} for ${date}`,
+        };
+        updateModuleStage("work-day-sheet", { rows: [], loaded: true, status: nextStatus });
+        if (activeModuleRef.current === "work-day-sheet" && options.showStatus !== false) {
+          setStatus(nextStatus);
+        }
+      } catch (error) {
+        handleAuthError(error);
+        setStatus({ tone: "error", text: error.message });
+        setDaySheetRows([]);
+      } finally {
+        setDaySheetLoading(false);
+      }
+    },
+    [authHeaders, handleAuthError, token, updateModuleStage]
+  );
+
   const {
     websiteAssetUploading,
     websiteAssets,
@@ -581,6 +623,10 @@ export function App() {
       await loadUsers();
       return;
     }
+    if (moduleKey === "work-day-sheet") {
+      await loadDaySheet(daySheetDate, selectedCompany);
+      return;
+    }
     if (moduleKey === "website-content") {
       await loadWebsiteContent();
       return;
@@ -647,6 +693,7 @@ export function App() {
   }, [
     authHeaders,
     handleAuthError,
+    loadDaySheet,
     loadRdpAllowList,
     loadUsers,
     loadWebsiteContent,
@@ -1019,6 +1066,51 @@ export function App() {
     signOut: clearBankReconciliationOnSignOut,
   };
 
+
+  function updateDaySheetRow(employeeId, field, value) {
+    setDaySheetRows((current) =>
+      current.map((row) => (row.employeeId === employeeId ? { ...row, [field]: value } : row))
+    );
+  }
+
+  async function saveDaySheet() {
+    try {
+      setDaySheetSaving(true);
+      setStatus({ tone: "", text: "Saving daily entry..." });
+      const payload = await requestJson("/api/work-entries/day", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          workDate: daySheetDate,
+          company: selectedCompany,
+          rows: daySheetRows.map((row) => ({
+            employeeId: row.employeeId,
+            dayUnits: row.dayUnits,
+            otHours: row.otHours,
+            overnightNights: row.overnightNights,
+            overnightHours: row.overnightHours,
+            projectCode: row.projectCode,
+            note: row.note,
+          })),
+        }),
+      });
+      setDaySheetRows(normalizeRows(payload));
+      setStatus({
+        tone: "ok",
+        text: `Saved ${payload.saved || 0}, cleared ${payload.deleted || 0}`,
+      });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setDaySheetSaving(false);
+    }
+  }
+
+  function changeDaySheetDate(value) {
+    setDaySheetDate(value);
+    loadDaySheet(value, selectedCompany);
+  }
 
   function updateQuery(value) {
     setQuery(value);
@@ -2099,7 +2191,22 @@ export function App() {
           onSwitchCompany={switchCompany}
         />
 
-        {activeModule === "rdp-allow" ? (
+        {activeModule === "work-day-sheet" ? (
+          <DaySheetPage
+            companies={companies}
+            company={selectedCompany}
+            loading={daySheetLoading}
+            rows={daySheetRows}
+            saving={daySheetSaving}
+            status={status}
+            workDate={daySheetDate}
+            onCompanyChange={(value) => switchCompany({ target: { value } })}
+            onDateChange={changeDaySheetDate}
+            onRefresh={() => loadDaySheet(daySheetDate, selectedCompany)}
+            onRowChange={updateDaySheetRow}
+            onSave={saveDaySheet}
+          />
+        ) : activeModule === "rdp-allow" ? (
           <RdpAllowPage
             data={rdpAllow}
             input={rdpInput}

@@ -36,6 +36,7 @@ models/           SQLAlchemy models, one module per domain
   user_data.py      ErpUser
   employee_data.py  ErpEmployee
   salary_data.py    ErpEmployeeSalary
+  work_entry.py     ErpWorkEntry
   sessions.py       ErpSession
   project_data.py   ErpProject, ErpProjectDocument
   project_photos.py ErpProjectPhoto
@@ -46,7 +47,7 @@ function/         the app package
   routes/           blueprints
   services/         AutoCount SDK bridge, SQL reader, ERP data stores
   services/values.py  DB value <-> API JSON conversions
-migrations/       Alembic; head revision 5be2a3235d58
+migrations/       Alembic; head revision a935a6328250
 ```
 
 `models/<name>.py` and `function/services/<name>.py` are deliberately named in
@@ -89,6 +90,49 @@ computes nothing.
 `epf_contributing` and `socso_contributing` exist because not everyone
 contributes, and that decision belongs to the person rather than to the rate
 table.
+
+### Overtime is per person, not per company
+
+Everyone is day-rated, but the overtime formula is not shared:
+
+```
+hourly base = basic_rate / ot_divisor        # 8, 9 and 10 are all in use
+ot pay      = ot_hours x hourly base x ot_multiplier   # 1.5, 1.75, 2.0
+```
+
+The divisor is that person's standard hours, and the multiplier that goes with
+it is theirs too. Both live on their salary row.
+
+Overnight is worse -- all four arrangements are in use here, so
+`overnight_mode` selects between them:
+
+| mode | pay |
+|---|---|
+| `allowance` | `nights x overnight_allowance` |
+| `hourly` | `overnight_hours x hourly base x overnight_multiplier` |
+| `extra_day` | `nights x basic_rate x overnight_day_factor` |
+| `allowance_plus_hours` | both of the first two |
+
+Salary Setup renders the result as a sentence (`otRuleText`) so nobody has to
+reassemble the rule from four numbers.
+
+### Timesheets
+
+`ErpWorkEntry` is one row per person **per date per company** -- not per day.
+Somebody can work for AED_SENG and AED_MANSON on the same date and each counts
+a full day, so that is two rows. A row also carries the overtime and overnight
+from that stint, which is how a foreman writes it down. The project link is
+optional: shop tidying and errands belong to no single job.
+
+The money is derived on read from the salary setup rather than stored, so
+correcting a rate fixes the figures instead of leaving stale ones behind. A
+payroll run will snapshot what it used, and that snapshot -- not this table --
+is the record for a pay dispute. Somebody with no salary setup gets no
+invented figures; the row is flagged unpayable with the reason.
+
+Two ways in, because both are how it actually gets recorded: the Timesheet
+list one row at a time, and Daily Entry for the whole crew on one date and
+company, where clearing a row to zero deletes it.
 
 ### Database
 
@@ -335,6 +379,15 @@ GET    /api/salary                         pay setup -- admin only, every verb
 GET    /api/salary/:employeeCode
 PATCH  /api/salary/:employeeCode            creates or updates, one row per person
 GET    /api/salary/meta
+
+GET    /api/work-entries                   timesheet -- admin only, every verb
+POST   /api/work-entries
+GET    /api/work-entries/:id
+PATCH  /api/work-entries/:id
+DELETE /api/work-entries/:id
+GET    /api/work-entries/day                whole crew for one date + company
+POST   /api/work-entries/day                batch save; a zeroed row is deleted
+GET    /api/work-entries/meta
 
 GET    /api/projects                       ERP-owned project/job layer
 POST   /api/projects

@@ -2596,3 +2596,41 @@ button:disabled {
   }
 
 }
+
+/* Daily Entry: a dense editable grid, one row per crew member. */
+.day-sheet-table .cell-input {
+  width: 100%;
+  min-width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+}
+
+.day-sheet-table td.number .cell-input {
+  text-align: right;
+}
+
+.day-sheet-table tbody tr.recorded {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.day-sheet-table tbody td strong {
+  display: block;
+}
+
+.day-sheet-table tbody td span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.day-sheet-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+.day-sheet-table .muted {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
