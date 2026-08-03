@@ -8,7 +8,18 @@ pg-backups/
 var/
 
 # --- Customer material ---
-Docs/whatsapp_chats/
+# docs/ holds written documentation and nothing else. Anything else dropped
+# in there -- a WhatsApp export, an EPF receipt, a scan of a payslip -- is
+# real customer or employee data and must not be committed.
+#
+# This is deliberately a whitelist. The previous rule named one folder
+# (Docs/whatsapp_chats/) and stopped matching the moment the directory was
+# renamed to lowercase, which is how those files reached the repository.
+docs/**
+!docs/**/
+!docs/**/*.md
+# ...except this one, which is customer leads that happen to be markdown.
+docs/whatsapp_chats/
 
 # --- Runtime / build output ---
 session_data.json
