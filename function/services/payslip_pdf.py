@@ -175,13 +175,23 @@ def _payslip(run, item, styles, company_label):
     # --- what they worked, and what it earned ---
     earnings = [
         [P("Earnings", "h"), P("Worked", "h"), P("Amount (RM)", "h")],
-        [P("Normal"), P(f"{_num(item['dayUnits'])} day(s)"), P(_money(item["normalPay"]), "cellR")],
-        [P("Overtime"), P(f"{_num(item['otHours'])} hour(s)"), P(_money(item["otPay"]), "cellR")],
-        [P("Overnight"),
-         P(f"{_num(item['overnightNights'])} night(s), {_num(item['overnightHours'])} hour(s)"),
-         P(_money(item["overnightPay"]), "cellR")],
-        [P("Fixed allowance"), P(""), P(_money(item["fixedAllowance"]), "cellR")],
+        # Monthly staff have no day count; printing "0 day(s)" next to a full
+        # month's pay reads like an error.
+        [P("Normal"),
+         P(f"{_num(item['dayUnits'])} day(s)" if Decimal(str(item["dayUnits"] or 0)) else "monthly"),
+         P(_money(item["normalPay"]), "cellR")],
     ]
+    if Decimal(str(item["otHours"] or 0)) or Decimal(str(item["otPay"] or 0)):
+        earnings.append([P("Overtime"), P(f"{_num(item['otHours'])} hour(s)"),
+                         P(_money(item["otPay"]), "cellR")])
+    if Decimal(str(item["overnightNights"] or 0)) or Decimal(str(item["overnightPay"] or 0)):
+        earnings.append([P("Overnight"),
+                         P(f"{_num(item['overnightNights'])} night(s), "
+                           f"{_num(item['overnightHours'])} hour(s)"),
+                         P(_money(item["overnightPay"]), "cellR")])
+    if Decimal(str(item["fixedAllowance"] or 0)):
+        earnings.append([P("Fixed allowance"), P(""),
+                         P(_money(item["fixedAllowance"]), "cellR")])
     if Decimal(str(item["adjustment"] or 0)) != 0:
         earnings.append([P("Adjustment"), P(item["adjustmentNote"] or ""),
                          P(_money(item["adjustment"]), "cellR")])
