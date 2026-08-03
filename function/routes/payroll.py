@@ -115,6 +115,40 @@ def update_payroll_item(item_id):
     return jsonify(item)
 
 
+@payroll_bp.post("/payroll/<run_id>/items")
+def add_payroll_item(run_id):
+    """
+    Put an employee onto a draft by hand, for a month the day sheet never saw.
+    """
+    session, auth_error = _require_admin_session()
+    if auth_error:
+        return auth_error
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        item = _payroll().add_item(run_id, session["username"], payload)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    if not item:
+        return jsonify({"error": "payroll_run_not_found"}), 404
+    return jsonify(item), 201
+
+
+@payroll_bp.delete("/payroll/items/<item_id>")
+def delete_payroll_item(item_id):
+    session, auth_error = _require_admin_session()
+    if auth_error:
+        return auth_error
+
+    try:
+        deleted = _payroll().delete_item(item_id, session["username"])
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    if not deleted:
+        return jsonify({"error": "payroll_item_not_found"}), 404
+    return jsonify({"deleted": deleted})
+
+
 @payroll_bp.get("/payroll/<run_id>/payslips.pdf")
 def payslips_pdf(run_id):
     """

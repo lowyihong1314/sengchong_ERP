@@ -2660,3 +2660,26 @@ button:disabled {
   font-weight: 700;
   border-top: 2px solid var(--border);
 }
+
+/* A hand-typed line is marked because it is the one kind of row Regenerate
+   throws away, and because its figures came off paper rather than the day
+   sheet -- whoever checks the run should be able to see which is which. */
+.payroll-table tbody tr.manual-line td:first-child {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.payroll-add-row {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.payroll-add-row .form-field {
+  min-width: 280px;
+}
+
+.field-hint {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

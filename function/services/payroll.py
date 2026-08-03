@@ -35,6 +35,28 @@ ITEM_TEXT_FIELDS = {
     "otherDeductionNote": "other_deduction_note",
 }
 
+# Earnings and worked amounts, editable only on a hand-typed line. On a
+# timesheet line these are priced from the work entries, and letting someone
+# type over them would leave a figure that silently disagrees with the day
+# sheet it claims to come from -- and that Regenerate would quietly undo.
+MANUAL_ONLY_FIELDS = {
+    "dayUnits": "day_units",
+    "otHours": "ot_hours",
+    "overnightNights": "overnight_nights",
+    "overnightHours": "overnight_hours",
+    "normalPay": "normal_pay",
+    "otPay": "ot_pay",
+    "overnightPay": "overnight_pay",
+}
+MANUAL_TEXT_FIELDS = {
+    "position": "position",
+    "otRule": "ot_rule",
+    "bankName": "bank_name",
+    "bankAccountNo": "bank_account_no",
+    "epfMemberNo": "epf_member_no",
+    "socsoNo": "socso_no",
+}
+
 # Until the KWSP / PERKESO / LHDN rate tables exist, nothing computes these and
 # a payslip has to say so rather than look complete.
 STATUTORY_PENDING = (
@@ -222,11 +244,103 @@ class PayrollStore:
             if api_field in payload:
                 setattr(item, column, str(payload.get(api_field) or "").strip())
 
+        if item.source == "manual":
+            for api_field, column in MANUAL_ONLY_FIELDS.items():
+                if api_field in payload:
+                    setattr(item, column, _dec(payload.get(api_field)))
+            for api_field, column in MANUAL_TEXT_FIELDS.items():
+                if api_field in payload:
+                    setattr(item, column, str(payload.get(api_field) or "").strip())
+        else:
+            rejected = sorted(
+                set(payload) & (set(MANUAL_ONLY_FIELDS) | set(MANUAL_TEXT_FIELDS))
+            )
+            if rejected:
+                raise ValueError(
+                    "This line came from the timesheet; "
+                    + ", ".join(rejected)
+                    + " can only be changed by editing the day sheet and regenerating."
+                )
+
         self._recompute(item)
         item.run.updated_at = now()
         item.run.updated_by = username or ""
         db.session.commit()
         return self._public_item(item)
+
+    def add_item(self, run_id, username, payload):
+        """
+        Put an employee on a draft by hand.
+
+        This is the only way onto a run for a month with no attendance records
+        -- historical payroll typed off paper vouchers, or somebody paid
+        outside the day sheet. The line starts at zero and is filled in from
+        the Payroll table; the salary setup is copied in as a starting point
+        where one exists, but nothing here is priced from work entries.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("JSON object payload is required.")
+
+        run = self._load(run_id)
+        if not run:
+            return None
+        if run.status == "locked":
+            raise ValueError("This payroll run is locked; lines cannot be added.")
+
+        employee_id = str(payload.get("employeeId") or "").strip()
+        if not employee_id:
+            raise ValueError("Employee is required.")
+        employee = db.session.get(ErpEmployee, employee_id)
+        if not employee:
+            raise ValueError("That employee no longer exists.")
+
+        # One line per person per run. Two lines would each look like the whole
+        # month's pay, and the payslip PDF prints a page per line, so the
+        # employee would receive two contradictory payslips.
+        if any(item.employee_id == employee.id for item in run.items):
+            raise ValueError(f"{employee.name} is already on this run.")
+
+        salary = db.session.scalars(
+            db.select(ErpEmployeeSalary).where(ErpEmployeeSalary.employee_id == employee.id)
+        ).first()
+
+        timestamp = now()
+        item = ErpPayrollItem(
+            id=uuid.uuid4().hex,
+            run_id=run.id,
+            source="manual",
+            employee_id=employee.id,
+            employee_code=employee.employee_code,
+            employee_name=employee.name,
+            position=employee.position or "",
+            daily_rate=_dec(salary.basic_rate) if salary else ZERO,
+            ot_rule=_ot_rule_text(salary) if salary else "Entered by hand",
+            bank_name=(salary.bank_name if salary else "") or "",
+            bank_account_no=(salary.bank_account_no if salary else "") or "",
+            epf_member_no=(salary.epf_member_no if salary else "") or "",
+            socso_no=(salary.socso_no if salary else "") or "",
+        )
+        self._recompute(item)
+        db.session.add(item)
+        run.updated_at = timestamp
+        run.updated_by = username or ""
+        db.session.commit()
+        return self._public_item(item)
+
+    def delete_item(self, item_id, username):
+        item = db.session.get(ErpPayrollItem, str(item_id or "").strip())
+        if not item:
+            return None
+        if item.run.status == "locked":
+            raise ValueError("This payroll run is locked; its lines cannot be removed.")
+
+        payload = self._public_item(item)
+        run = item.run
+        db.session.delete(item)
+        run.updated_at = now()
+        run.updated_by = username or ""
+        db.session.commit()
+        return payload
 
     def lock(self, run_id, username):
         run = self._load(run_id)
@@ -335,6 +449,8 @@ class PayrollStore:
         return {
             "id": item.id,
             "runId": item.run_id,
+            "source": item.source,
+            "manual": item.source == "manual",
             "employeeId": item.employee_id,
             "employeeCode": item.employee_code,
             "name": item.employee_name,

@@ -75,6 +75,14 @@ class ErpPayrollItem(db.Model):
     )
 
     # --- snapshot of who they were and what they were paid ---
+    # Where the line came from. A timesheet line is priced from work entries
+    # and rebuilt by Regenerate; a manual line was typed in by hand, which is
+    # how a month with no attendance records (historical payroll, or a payment
+    # made outside the day sheet) gets onto a run at all. The two are edited
+    # under different rules, so the origin has to be recorded, not guessed.
+    source = db.Column(
+        db.String(16), nullable=False, default="timesheet", server_default="timesheet"
+    )
     employee_code = db.Column(db.String(32), nullable=False)
     employee_name = db.Column(db.String(128), nullable=False)
     position = db.Column(db.String(64), nullable=False, default="", server_default="")

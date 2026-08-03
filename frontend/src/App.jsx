@@ -147,6 +147,7 @@ export function App() {
   const [payrollRun, setPayrollRun] = React.useState(null);
   const [payrollLoading, setPayrollLoading] = React.useState(false);
   const [payrollSaving, setPayrollSaving] = React.useState(false);
+  const [payrollEmployees, setPayrollEmployees] = React.useState([]);
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
   // them even though they are created later in the render.
@@ -398,6 +399,18 @@ export function App() {
         });
         const runs = normalizeRows(payload);
         setPayrollRuns(runs);
+
+        // Needed by the Add Employee picker. Inactive staff are included on
+        // purpose: back-entering last year's payroll means naming people who
+        // have since left.
+        try {
+          const staff = await requestJson("/api/employees", { headers: authHeaders() });
+          setPayrollEmployees(normalizeRows(staff));
+        } catch (staffError) {
+          // The run list is still usable without the picker, so this must not
+          // take the whole page down with it.
+          setPayrollEmployees([]);
+        }
         const nextStatus = {
           tone: "ok",
           text: `${runs.length} payroll run${runs.length === 1 ? "" : "s"}`,
@@ -1129,6 +1142,18 @@ export function App() {
   }
 
   async function generatePayrollRun(replace) {
+    // Regenerate rebuilds from the day sheet, which drops hand-typed lines.
+    // Those are the expensive ones -- somebody read them off paper -- so
+    // losing them to a button press should take a deliberate answer.
+    if (replace) {
+      const byHand = (payrollRun?.items || []).filter((item) => item.manual);
+      if (byHand.length) {
+        const names = byHand.map((item) => item.name).join(", ");
+        if (!window.confirm(
+          `Regenerating rebuilds this run from the day sheet and will discard ${byHand.length} hand-added line(s): ${names}. Continue?`
+        )) return;
+      }
+    }
     try {
       setPayrollLoading(true);
       setStatus({ tone: "", text: "Generating from timesheet..." });
@@ -1271,6 +1296,49 @@ export function App() {
       // dies before it has actually started reading it.
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       setStatus({ tone: "ok", text: `Payslips for ${payrollRun.period} downloaded` });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
+
+  async function addPayrollItem(employeeId) {
+    if (!payrollRun || !employeeId) return;
+    try {
+      setPayrollSaving(true);
+      const item = await requestJson(`/api/payroll/${payrollRun.id}/items`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ employeeId }),
+      });
+      const run = await requestJson(`/api/payroll/${payrollRun.id}`, { headers: authHeaders() });
+      setPayrollRun(run);
+      setStatus({ tone: "ok", text: `Added ${item.name}; fill in the amounts on the row` });
+      await loadPayroll({ showStatus: false });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
+
+  async function removePayrollItem(itemId) {
+    const line = (payrollRun?.items || []).find((item) => item.id === itemId);
+    if (!line) return;
+    if (!window.confirm(`Remove ${line.name} from ${payrollRun.period}?`)) return;
+    try {
+      setPayrollSaving(true);
+      await requestJson(`/api/payroll/items/${itemId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const run = await requestJson(`/api/payroll/${payrollRun.id}`, { headers: authHeaders() });
+      setPayrollRun(run);
+      setStatus({ tone: "ok", text: `Removed ${line.name}` });
+      await loadPayroll({ showStatus: false });
     } catch (error) {
       handleAuthError(error);
       setStatus({ tone: "error", text: error.message });
@@ -2412,7 +2480,10 @@ export function App() {
             saving={payrollSaving}
             status={status}
             onDelete={deletePayrollRun}
+            employees={payrollEmployees}
+            onAddItem={addPayrollItem}
             onDownloadPayslips={downloadPayslips}
+            onRemoveItem={removePayrollItem}
             onGenerate={generatePayrollRun}
             onItemChange={updatePayrollItem}
             onItemSave={savePayrollItem}
