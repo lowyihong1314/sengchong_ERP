@@ -8,16 +8,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # between the KWSP statements, the PERKESO forms and the company chop on the
 # handwritten vouchers, so these are the KWSP ones -- the most recently filed --
 # and every field is overridable from .env rather than being guessed at in code.
-# The two firms are neighbours on the same street, at 14 and 25.
+# Taken from each firm's SSM Borang E renewal certificate, which is the only
+# document here that is authoritative for both the registration number and the
+# address.
 #
-# Do not take these from the KWSP or PERKESO paperwork in the payroll records.
-# Those carry addresses the companies have since moved away from -- Jalan
-# Bestari 29/1 on the KWSP statements, Jalan Beladau 16 on the Borang 8A -- and
-# a payslip has to show where the employer is now.
+# The two firms are neighbours on the same street, at 14 and 25. Registration
+# numbers are written the way SSM writes them: the twelve-digit number with the
+# old-style number after it, because counterparties still ask for either.
+#
+# Do not take any of this from the KWSP or PERKESO paperwork in the payroll
+# records. Those carry addresses the companies have since moved away from --
+# Jalan Bestari 29/1 on the KWSP statements, Jalan Beladau 16 on the Borang 8A
+# -- and a payslip has to show where the employer is now.
 PAYSLIP_LETTERHEAD = {
     "AED_SENG": {
         "name": "SENG CHONG INTERIOR DESIGN",
-        "registration": "JM0901707-D",
+        "registration": "201903110413 (JM0901707-D)",
         "address": [
             "NO. 14, JALAN CANGGIH 5,",
             "TAMAN PERINDUSTRIAN DESA CEMERLANG,",
@@ -26,7 +32,7 @@ PAYSLIP_LETTERHEAD = {
     },
     "AED_MANSON": {
         "name": "MANSON LIANG INTERIOR DESIGN & RENOVATION",
-        "registration": "JM09/0762-V",
+        "registration": "201903201306 (JM0910762-V)",
         "address": [
             "NO. 25, JALAN CANGGIH 5,",
             "TAMAN PERINDUSTRIAN DESA CEMERLANG,",

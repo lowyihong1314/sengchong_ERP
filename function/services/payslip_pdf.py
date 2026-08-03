@@ -170,8 +170,11 @@ def _voucher(run, item, styles, letterhead):
 
     # --- letterhead -----------------------------------------------------
     story.append(P(letterhead.get("name") or run["company"], "co"))
+    # Printed verbatim. The registration already carries SSM's own punctuation
+    # -- "201903201306 (JM0910762-V)" -- so adding another pair of brackets
+    # around it would nest them.
     if letterhead.get("registration"):
-        story.append(P(f"({letterhead['registration']})", "coSub"))
+        story.append(P(letterhead["registration"], "coSub"))
     for line in letterhead.get("address") or []:
         story.append(P(line, "coSub"))
     story.append(Spacer(1, 6))
