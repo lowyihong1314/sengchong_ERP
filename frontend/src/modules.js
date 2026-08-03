@@ -1,6 +1,7 @@
 import {
   Banknote,
   CalendarClock,
+  FileSpreadsheet,
   ClipboardList,
   Contact,
   FileText,
@@ -1240,6 +1241,13 @@ export const MODULES = {
     label: "Daily Entry",
     meta: "Record the whole crew for one day",
     icon: CalendarClock,
+    system: true,
+  },
+  payroll: {
+    title: "Payroll",
+    label: "Payroll",
+    meta: "Monthly runs and payslips",
+    icon: FileSpreadsheet,
     system: true,
   },
   "user-management": {

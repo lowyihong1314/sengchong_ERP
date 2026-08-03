@@ -2634,3 +2634,29 @@ button:disabled {
   color: var(--muted);
   font-size: 0.82rem;
 }
+
+/* Payroll: a wide editable grid, so the cells stay compact. */
+.payroll-table .cell-input {
+  width: 100%;
+  min-width: 62px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  text-align: right;
+}
+
+.payroll-table tbody td strong {
+  display: block;
+}
+
+.payroll-table tbody td span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.payroll-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}

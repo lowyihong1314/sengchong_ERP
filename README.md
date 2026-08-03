@@ -37,6 +37,7 @@ models/           SQLAlchemy models, one module per domain
   employee_data.py  ErpEmployee
   salary_data.py    ErpEmployeeSalary
   work_entry.py     ErpWorkEntry
+  payroll.py        ErpPayrollRun, ErpPayrollItem
   sessions.py       ErpSession
   project_data.py   ErpProject, ErpProjectDocument
   project_photos.py ErpProjectPhoto
@@ -47,7 +48,7 @@ function/         the app package
   routes/           blueprints
   services/         AutoCount SDK bridge, SQL reader, ERP data stores
   services/values.py  DB value <-> API JSON conversions
-migrations/       Alembic; head revision a935a6328250
+migrations/       Alembic; head revision 47b6d2540510
 ```
 
 `models/<name>.py` and `function/services/<name>.py` are deliberately named in
@@ -138,6 +139,36 @@ invented figures; the row is flagged unpayable with the reason.
 Two ways in, because both are how it actually gets recorded: the Timesheet
 list one row at a time, and Daily Entry for the whole crew on one date and
 company, where clearing a row to zero deletes it.
+
+### Payroll
+
+A run gathers one month for one company from the timesheet into a draft, which
+can be regenerated or edited by hand, and then **locked**. Locking is the point
+of the module: work entries price themselves from today's salary setup, which
+is right for a live view and wrong for a month already paid, so each payroll
+item keeps its own copy of the name, position, daily rate, OT rule and every
+computed figure. A raise next month does not move last month's payslip, and a
+locked run cannot be regenerated, edited or deleted -- a mistake is corrected
+by an adjustment on a later run.
+
+Payslips are rendered with reportlab (`function/services/payslip_pdf.py`), not
+through AutoCount's report engine: AutoCount has no payslip template and none
+of this data lives there. The font must be a **TrueType**-outline CJK font --
+reportlab cannot read the PostScript outlines that Noto CJK ships with, and
+falling back to Helvetica silently turns Chinese names into boxes, so the
+renderer raises instead:
+
+```bash
+sudo apt-get install fonts-wqy-microhei
+```
+
+**Statutory deductions are not calculated yet.** EPF, SOCSO, EIS and PCB are
+columns on every payroll item and rows on every payslip, but nothing fills
+them: those are KWSP / PERKESO / LHDN rates that change, and they belong in
+maintained rate tables rather than being written from memory. Until then the
+figures are gross pay, the fields can be typed in by hand, and both the screen
+and the printed payslip say so in as many words -- printed paper outlives
+whatever warning the screen showed.
 
 ### Database
 
@@ -393,6 +424,15 @@ DELETE /api/work-entries/:id
 GET    /api/work-entries/day                whole crew for one date + company
 POST   /api/work-entries/day                batch save; a zeroed row is deleted
 GET    /api/work-entries/meta
+
+GET    /api/payroll                        monthly runs -- admin only
+POST   /api/payroll                        generate a draft from the timesheet
+GET    /api/payroll/:id                    run plus its lines
+PATCH  /api/payroll/items/:id              edit a draft line
+POST   /api/payroll/:id/lock               freeze the figures; one way
+DELETE /api/payroll/:id                    drafts only
+GET    /api/payroll/:id/payslips.pdf       one page per employee; ?employee=CODE for one
+GET    /api/payroll/meta
 
 GET    /api/projects                       ERP-owned project/job layer
 POST   /api/projects

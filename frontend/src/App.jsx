@@ -9,6 +9,7 @@ import {
 import { BankingListControls } from "./components/BankingListControls.jsx";
 import { DebtorCandidatesPanel } from "./components/DebtorCandidatesPanel.jsx";
 import { DocumentCandidatesPanel } from "./components/DocumentCandidatesPanel.jsx";
+import { PayrollPage } from "./pages/PayrollPage.jsx";
 import { ProjectFromDebtorForm } from "./components/ProjectFromDebtorForm.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { Topbar } from "./components/Topbar.jsx";
@@ -139,6 +140,13 @@ export function App() {
   const [daySheetRows, setDaySheetRows] = React.useState([]);
   const [daySheetLoading, setDaySheetLoading] = React.useState(false);
   const [daySheetSaving, setDaySheetSaving] = React.useState(false);
+  // Payroll: the selected run and its lines live here so leaving the tab and
+  // coming back does not lose an in-progress draft.
+  const [payrollPeriod, setPayrollPeriod] = React.useState(() => today().slice(0, 7));
+  const [payrollRuns, setPayrollRuns] = React.useState([]);
+  const [payrollRun, setPayrollRun] = React.useState(null);
+  const [payrollLoading, setPayrollLoading] = React.useState(false);
+  const [payrollSaving, setPayrollSaving] = React.useState(false);
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
   // them even though they are created later in the render.
@@ -375,6 +383,38 @@ export function App() {
     signOut: clearAdminSettingsOnSignOut,
   };
 
+
+  const loadPayroll = React.useCallback(
+    async (options = {}) => {
+      if (!token) return;
+
+      try {
+        setPayrollLoading(true);
+        if (options.showStatus !== false) {
+          setStatus({ tone: "", text: "Loading payroll..." });
+        }
+        const payload = await requestJson("/api/payroll?company=all", {
+          headers: authHeaders(),
+        });
+        const runs = normalizeRows(payload);
+        setPayrollRuns(runs);
+        const nextStatus = {
+          tone: "ok",
+          text: `${runs.length} payroll run${runs.length === 1 ? "" : "s"}`,
+        };
+        updateModuleStage("payroll", { rows: [], loaded: true, status: nextStatus });
+        if (activeModuleRef.current === "payroll" && options.showStatus !== false) {
+          setStatus(nextStatus);
+        }
+      } catch (error) {
+        handleAuthError(error);
+        setStatus({ tone: "error", text: error.message });
+      } finally {
+        setPayrollLoading(false);
+      }
+    },
+    [authHeaders, handleAuthError, token, updateModuleStage]
+  );
 
   const loadDaySheet = React.useCallback(
     async (date, company, options = {}) => {
@@ -627,6 +667,10 @@ export function App() {
       await loadDaySheet(daySheetDate, selectedCompany);
       return;
     }
+    if (moduleKey === "payroll") {
+      await loadPayroll();
+      return;
+    }
     if (moduleKey === "website-content") {
       await loadWebsiteContent();
       return;
@@ -694,6 +738,7 @@ export function App() {
     authHeaders,
     handleAuthError,
     loadDaySheet,
+    loadPayroll,
     loadRdpAllowList,
     loadUsers,
     loadWebsiteContent,
@@ -1066,6 +1111,127 @@ export function App() {
     signOut: clearBankReconciliationOnSignOut,
   };
 
+
+  async function openPayrollRun(runId) {
+    if (!runId) { setPayrollRun(null); return; }
+    try {
+      setPayrollLoading(true);
+      const run = await requestJson(`/api/payroll/${runId}`, { headers: authHeaders() });
+      setPayrollRun(run);
+      setPayrollPeriod(run.period);
+      setStatus({ tone: "ok", text: `${run.company} ${run.period} - ${run.status}` });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollLoading(false);
+    }
+  }
+
+  async function generatePayrollRun(replace) {
+    try {
+      setPayrollLoading(true);
+      setStatus({ tone: "", text: "Generating from timesheet..." });
+      const run = await requestJson("/api/payroll", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ company: selectedCompany, period: payrollPeriod, replace }),
+      });
+      setPayrollRun(run);
+      setStatus({ tone: "ok", text: `Generated ${run.headcount} line(s) for ${run.period}` });
+      await loadPayroll({ showStatus: false });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollLoading(false);
+    }
+  }
+
+  function updatePayrollItem(itemId, field, value) {
+    setPayrollRun((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.id === itemId ? { ...item, [field]: value } : item
+            ),
+          }
+        : current
+    );
+  }
+
+  async function savePayrollItem(itemId) {
+    const item = payrollRun?.items?.find((row) => row.id === itemId);
+    if (!item) return;
+    try {
+      setPayrollSaving(true);
+      const saved = await requestJson(`/api/payroll/items/${itemId}`, {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          fixedAllowance: item.fixedAllowance,
+          adjustment: item.adjustment,
+          epfEmployee: item.epfEmployee,
+          socsoEmployee: item.socsoEmployee,
+          eisEmployee: item.eisEmployee,
+          pcb: item.pcb,
+          otherDeduction: item.otherDeduction,
+        }),
+      });
+      // Reload the run so the footer totals move with the line.
+      const run = await requestJson(`/api/payroll/${saved.runId}`, { headers: authHeaders() });
+      setPayrollRun(run);
+      setStatus({ tone: "ok", text: `Saved ${saved.employeeCode}` });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
+
+  async function lockPayrollRun() {
+    if (!payrollRun) return;
+    if (!window.confirm(
+      `Lock ${payrollRun.company} ${payrollRun.period}? Figures are frozen and the lines can no longer be edited.`
+    )) return;
+    try {
+      setPayrollSaving(true);
+      const run = await requestJson(`/api/payroll/${payrollRun.id}/lock`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      setPayrollRun(run);
+      setStatus({ tone: "ok", text: `Locked ${run.period}` });
+      await loadPayroll({ showStatus: false });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
+
+  async function deletePayrollRun() {
+    if (!payrollRun) return;
+    if (!window.confirm(`Delete the draft for ${payrollRun.company} ${payrollRun.period}?`)) return;
+    try {
+      setPayrollSaving(true);
+      await requestJson(`/api/payroll/${payrollRun.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      setPayrollRun(null);
+      setStatus({ tone: "ok", text: "Draft deleted" });
+      await loadPayroll({ showStatus: false });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
 
   function updateDaySheetRow(employeeId, field, value) {
     setDaySheetRows((current) =>
@@ -2191,7 +2357,24 @@ export function App() {
           onSwitchCompany={switchCompany}
         />
 
-        {activeModule === "work-day-sheet" ? (
+        {activeModule === "payroll" ? (
+          <PayrollPage
+            loading={payrollLoading}
+            period={payrollPeriod}
+            run={payrollRun}
+            runs={payrollRuns}
+            saving={payrollSaving}
+            status={status}
+            onDelete={deletePayrollRun}
+            onGenerate={generatePayrollRun}
+            onItemChange={updatePayrollItem}
+            onItemSave={savePayrollItem}
+            onLock={lockPayrollRun}
+            onPeriodChange={setPayrollPeriod}
+            onRefresh={() => loadPayroll()}
+            onSelectRun={openPayrollRun}
+          />
+        ) : activeModule === "work-day-sheet" ? (
           <DaySheetPage
             companies={companies}
             company={selectedCompany}
