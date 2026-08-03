@@ -8,20 +8,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # between the KWSP statements, the PERKESO forms and the company chop on the
 # handwritten vouchers, so these are the KWSP ones -- the most recently filed --
 # and every field is overridable from .env rather than being guessed at in code.
+# The two firms are neighbours on the same street, at 14 and 25.
+#
+# Do not take these from the KWSP or PERKESO paperwork in the payroll records.
+# Those carry addresses the companies have since moved away from -- Jalan
+# Bestari 29/1 on the KWSP statements, Jalan Beladau 16 on the Borang 8A -- and
+# a payslip has to show where the employer is now.
 PAYSLIP_LETTERHEAD = {
     "AED_SENG": {
         "name": "SENG CHONG INTERIOR DESIGN",
         "registration": "JM0901707-D",
         "address": [
-            "NO. 14, JALAN CANGGIH 5, TAMAN PERINDUSTRIAN DESA",
-            "CEMERLANG, 81800 ULU TIRAM JOHOR",
+            "NO. 14, JALAN CANGGIH 5,",
+            "TAMAN PERINDUSTRIAN DESA CEMERLANG,",
+            "81800 ULU TIRAM, JOHOR",
         ],
     },
     "AED_MANSON": {
         "name": "MANSON LIANG INTERIOR DESIGN & RENOVATION",
         "registration": "JM09/0762-V",
         "address": [
-            "NO 82 JALAN BESTARI 29/1, TAMAN BESTARI INDAH,",
+            "NO. 25, JALAN CANGGIH 5,",
+            "TAMAN PERINDUSTRIAN DESA CEMERLANG,",
             "81800 ULU TIRAM, JOHOR",
         ],
     },
