@@ -202,7 +202,8 @@ python3 -m alembic downgrade -1
 ```
 
 See `docs/postgres-migration.md` for the schema, the cutover, and how to redo
-it on another machine.
+it on another machine. Note that `docs/` is local only and is not in the
+repository -- it holds customer leads, EPF receipts and scans of payslips.
 
 ## Frontend Structure
 
