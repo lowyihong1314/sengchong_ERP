@@ -276,13 +276,15 @@ def _voucher(run, item, styles, letterhead):
     story.append(employer)
     story.append(Spacer(1, 5))
 
-    # An incomplete payslip has to say so on the page. Printed paper outlives
-    # whatever warning happened to be on screen when it was printed.
-    note = run.get("statutoryNote") or ""
-    if note:
-        story.append(P(note, "warn"))
-        story.append(Spacer(1, 3))
-
+    # No provenance text here on purpose. Where a figure came from -- filed
+    # with KWSP, derived from a contribution, copied off a voucher -- is
+    # something the person reviewing the import needs, and it is shown on the
+    # Payroll screen. It is not something the employee receiving the payslip
+    # needs, and "your gross was reverse-engineered from your EPF" reads badly
+    # on a document you hand somebody.
+    #
+    # The one thing the page must carry is whether it is fit to issue, and
+    # that is the draft marker below.
     state = "LOCKED" if run.get("locked") else "DRAFT - not final"
     story.append(P(
         f"{state} &middot; payroll run {run['period']} &middot; "

@@ -25,6 +25,7 @@ export function PayrollPage({
   onItemSave,
   onLock,
   onDelete,
+  onDownloadPayslips,
   onRefresh,
 }) {
   const items = run?.items || [];
@@ -53,15 +54,15 @@ export function PayrollPage({
             </button>
           )}
           {run && (
-            <a
+            <button
               className="secondary-button"
-              href={`/api/payroll/${run.id}/payslips.pdf`}
-              rel="noreferrer"
-              target="_blank"
+              disabled={saving}
+              type="button"
+              onClick={onDownloadPayslips}
             >
               <Download aria-hidden="true" size={16} />
               Payslips PDF
-            </a>
+            </button>
           )}
           {run && !locked && (
             <button className="primary-button" disabled={saving} type="button" onClick={onLock}>
@@ -102,9 +103,9 @@ export function PayrollPage({
         </div>
       </div>
 
-      {run && !run.statutoryConfigured && (
-        <div className="status-bar error">{run.statutoryNote}</div>
-      )}
+      {/* Where these figures came from. Shown here, for whoever is checking
+          the run -- deliberately not printed on the payslip the employee gets. */}
+      {run?.statutoryNote && <div className="status-bar">Source: {run.statutoryNote}</div>}
       {locked && (
         <div className="status-bar ok">
           Locked {run.lockedAt} by {run.lockedBy}. Figures are frozen; correct a locked month with

@@ -1233,6 +1233,52 @@ export function App() {
     }
   }
 
+  async function downloadPayslips() {
+    if (!payrollRun) return;
+    // Fetched rather than linked. Auth is a Bearer token, and a plain <a href>
+    // sends no Authorization header, so navigating to the URL just returns 401.
+    //
+    // The other way out would be ?token= in the query string, which is what the
+    // project-photo route does. Not here: a payslip carries IC numbers and
+    // salaries, and a token in the URL ends up in the nginx access log, the
+    // browser history and any Referer sent onward.
+    try {
+      setPayrollSaving(true);
+      const response = await fetch(`/api/payroll/${payrollRun.id}/payslips.pdf`, {
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        let message = `Request failed: ${response.status}`;
+        try {
+          message = (await response.json()).error || message;
+        } catch (parseError) {
+          /* the error body was not JSON; the status is all we have */
+        }
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `payslips-${payrollRun.company}-${payrollRun.period}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Revoked on a later tick: Chrome aborts the download if the object URL
+      // dies before it has actually started reading it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setStatus({ tone: "ok", text: `Payslips for ${payrollRun.period} downloaded` });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setPayrollSaving(false);
+    }
+  }
+
   function updateDaySheetRow(employeeId, field, value) {
     setDaySheetRows((current) =>
       current.map((row) => (row.employeeId === employeeId ? { ...row, [field]: value } : row))
@@ -2366,6 +2412,7 @@ export function App() {
             saving={payrollSaving}
             status={status}
             onDelete={deletePayrollRun}
+            onDownloadPayslips={downloadPayslips}
             onGenerate={generatePayrollRun}
             onItemChange={updatePayrollItem}
             onItemSave={savePayrollItem}
