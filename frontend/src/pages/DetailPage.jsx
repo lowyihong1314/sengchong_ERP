@@ -63,6 +63,7 @@ export function DetailPage({
   const lines = getDetailLines(module, detail);
   const pageTitle = detail ? readValue(detail, module.rowKey) : module.singular;
   const debtorInfo = getDebtorInfo(detail, debtors);
+  const detailSummary = detail ? getDetailSummary(module, detail) : [];
   const canExportPdf = Boolean(detail && onExportPdf);
   const currencyCode = getDocumentCurrency(detail);
   const linkedProjects = detail?.projects || [];
@@ -297,7 +298,7 @@ export function DetailPage({
             </>
           )}
 
-          <TotalSummary items={getDetailSummary(module, detail)} />
+          {detailSummary.length > 0 && <TotalSummary items={detailSummary} />}
         </>
       )}
     </section>

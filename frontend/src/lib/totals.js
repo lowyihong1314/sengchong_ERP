@@ -234,6 +234,11 @@ export function getDetailSummary(module, detail) {
     ];
   }
 
+  // Anything reaching here without line fields is master data -- an employee,
+  // a salary row, a timesheet entry. A document total made of four zeroes is
+  // noise on those, so say there is nothing to summarise.
+  if (!module.lineFields?.length) return [];
+
   return [
     ["Line Total", lineTotal, "number"],
     ["Discount", discount, "number"],
