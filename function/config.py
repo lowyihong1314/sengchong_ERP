@@ -4,6 +4,46 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Letterhead for printed payslips. Registration numbers and addresses differ
+# between the KWSP statements, the PERKESO forms and the company chop on the
+# handwritten vouchers, so these are the KWSP ones -- the most recently filed --
+# and every field is overridable from .env rather than being guessed at in code.
+PAYSLIP_LETTERHEAD = {
+    "AED_SENG": {
+        "name": "SENG CHONG INTERIOR DESIGN",
+        "registration": "JM0901707-D",
+        "address": [
+            "NO. 14, JALAN CANGGIH 5, TAMAN PERINDUSTRIAN DESA",
+            "CEMERLANG, 81800 ULU TIRAM JOHOR",
+        ],
+    },
+    "AED_MANSON": {
+        "name": "MANSON LIANG INTERIOR DESIGN & RENOVATION",
+        "registration": "JM09/0762-V",
+        "address": [
+            "NO 82 JALAN BESTARI 29/1, TAMAN BESTARI INDAH,",
+            "81800 ULU TIRAM, JOHOR",
+        ],
+    },
+}
+
+
+def payslip_letterhead(company):
+    """
+    Letterhead for one company, with .env overrides:
+        PAYSLIP_NAME_AED_SENG, PAYSLIP_REG_AED_SENG, PAYSLIP_ADDR_AED_SENG
+    The address override is split on "|" to make its line breaks explicit.
+    """
+    key = str(company or "").strip().upper()
+    base = dict(PAYSLIP_LETTERHEAD.get(key, {"name": key, "registration": "", "address": []}))
+    base["name"] = env(f"PAYSLIP_NAME_{key}", base.get("name", key))
+    base["registration"] = env(f"PAYSLIP_REG_{key}", base.get("registration", ""))
+    override = env(f"PAYSLIP_ADDR_{key}", "")
+    if override:
+        base["address"] = [line.strip() for line in override.split("|") if line.strip()]
+    return base
+
+
 DEFAULT_COMPANY_DATABASES = (
     {"value": "AED_SENG", "label": "SENG CHONG INTERIOR DESIGN"},
     {"value": "AED_MANSON", "label": "MANSON LIANG INTERIOR & RENOVATION"},

@@ -1,12 +1,19 @@
 """
-Payslip PDF.
+Payslip PDF, laid out like the SALARY VOUCHER the office already issues.
+
+Two bilingual columns -- EARNINGS / 收入 against DEDUCTIONS / 扣除 -- then
+additions, net pay, the employer's contributions and the signature lines. The
+arithmetic follows the paper form rather than the database:
+
+    NET = GROSS - TOTAL DEDUCTIONS + TOTAL ADDITIONS
+
+so an allowance paid on top of salary appears under additions, after the
+deductions have been taken, which is where the clerk expects to find it.
 
 Built with reportlab rather than through AutoCount's report engine: AutoCount
-has no payslip template and the payroll data is not in AutoCount at all.
-
-Everything printed comes from the payroll item, which is a snapshot taken when
-the run was built. Reprinting last quarter's payslip after somebody's raise
-therefore still shows what they were actually paid.
+has no payslip template and none of this data lives there. Everything printed
+comes from the payroll item, which is a snapshot taken when the run was built,
+so reprinting an old payslip after a raise still shows what was actually paid.
 """
 from decimal import Decimal
 from io import BytesIO
@@ -20,7 +27,6 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    KeepTogether,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -30,23 +36,22 @@ from reportlab.platypus import (
 )
 
 
-# Employee names here are Chinese as often as not, so a Latin-only font is not
-# enough -- Helvetica renders them as empty boxes.
+# The form is bilingual, so a Latin-only font is not enough -- Helvetica
+# renders the Chinese labels as empty boxes.
 #
 # It has to be a TrueType-outline font: reportlab's TTFont cannot read the
 # PostScript (CFF) outlines that Noto CJK ships with, which is exactly how the
-# first attempt at this silently produced a payslip full of boxes. WenQuanYi
-# is TrueType and is embedded in the file, so the PDF reads the same anywhere.
+# first version of this silently produced a payslip full of boxes. WenQuanYi is
+# TrueType and gets embedded, so the PDF reads the same on any machine.
 _CJK_CANDIDATES = [
     "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
 ]
 BODY_FONT = None
-BOLD_FONT = None
 
 
 class PayslipFontError(RuntimeError):
-    """No font capable of rendering employee names could be loaded."""
+    """No font capable of rendering the bilingual labels could be loaded."""
 
 
 def _register_fonts():
@@ -54,10 +59,10 @@ def _register_fonts():
     Load a CJK-capable font, or refuse to build the payslip.
 
     Falling back to Helvetica is not an option: it produces a document that
-    looks finished while the employee's name is a row of boxes, and that is
-    worse than an error somebody has to read.
+    looks finished while half the labels are boxes, and that is worse than an
+    error somebody has to read.
     """
-    global BODY_FONT, BOLD_FONT
+    global BODY_FONT
     if BODY_FONT:
         return
 
@@ -68,7 +73,7 @@ def _register_fonts():
             continue
         try:
             pdfmetrics.registerFont(TTFont("PayslipCJK", path, subfontIndex=0))
-            BODY_FONT = BOLD_FONT = "PayslipCJK"
+            BODY_FONT = "PayslipCJK"
             return
         except Exception as error:
             tried.append(f"{path}: {error}")
@@ -79,20 +84,38 @@ def _register_fonts():
     )
 
 
-def _money(value):
+def _d(value):
     if value in (None, ""):
-        return "0.00"
-    return f"{Decimal(str(value)):,.2f}"
+        return Decimal("0")
+    return Decimal(str(value))
 
 
-def _num(value):
-    if value in (None, ""):
-        return "0"
-    text = f"{Decimal(str(value)):.2f}".rstrip("0").rstrip(".")
-    return text or "0"
+def _rm(value):
+    """The form prints a dash rather than RM0.00 for anything not applicable."""
+    amount = _d(value)
+    return f"RM{amount:,.2f}" if amount else "-"
 
 
-def build_payslips(run, items, *, company_label=""):
+def _month_label(period):
+    """2025-12 -> DEC 2025, the way the paper form writes it."""
+    names = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+             "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    try:
+        year, month = (int(part) for part in str(period).split("-"))
+        return f"{names[month - 1]} {year}"
+    except (ValueError, IndexError):
+        return str(period)
+
+
+def _ic(value):
+    """770110085625 -> 770110-08-5625, as printed on the form."""
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) == 12:
+        return f"{digits[:6]}-{digits[6:8]}-{digits[8:]}"
+    return str(value or "")
+
+
+def build_payslips(run, items, *, letterhead=None):
     """
     Render one PDF holding a payslip per employee, one to a page.
 
@@ -105,26 +128,28 @@ def build_payslips(run, items, *, company_label=""):
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=16 * mm,
-        bottomMargin=16 * mm,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
         title=f"Payslips {run['company']} {run['period']}",
         author="AutoCount ERP Gateway",
     )
 
     base = getSampleStyleSheet()["Normal"]
     styles = {
-        "title": ParagraphStyle("t", parent=base, fontName=BOLD_FONT, fontSize=15, leading=19),
-        "sub": ParagraphStyle("s", parent=base, fontName=BODY_FONT, fontSize=9, leading=12,
-                              textColor=colors.HexColor("#475569")),
-        "cell": ParagraphStyle("c", parent=base, fontName=BODY_FONT, fontSize=9, leading=12),
-        "cellR": ParagraphStyle("cr", parent=base, fontName=BODY_FONT, fontSize=9, leading=12,
+        "co": ParagraphStyle("co", parent=base, fontName=BODY_FONT, fontSize=13, leading=16,
+                             alignment=TA_CENTER),
+        "coSub": ParagraphStyle("cs", parent=base, fontName=BODY_FONT, fontSize=8.5, leading=11,
+                                alignment=TA_CENTER),
+        "title": ParagraphStyle("t", parent=base, fontName=BODY_FONT, fontSize=12, leading=15,
+                                alignment=TA_CENTER),
+        "cell": ParagraphStyle("c", parent=base, fontName=BODY_FONT, fontSize=8.5, leading=11),
+        "cellR": ParagraphStyle("cr", parent=base, fontName=BODY_FONT, fontSize=8.5, leading=11,
                                 alignment=TA_RIGHT),
-        "h": ParagraphStyle("h", parent=base, fontName=BOLD_FONT, fontSize=10, leading=13),
-        "warn": ParagraphStyle("w", parent=base, fontName=BOLD_FONT, fontSize=9, leading=12,
+        "warn": ParagraphStyle("w", parent=base, fontName=BODY_FONT, fontSize=7.5, leading=10,
                                textColor=colors.HexColor("#9a3412")),
-        "foot": ParagraphStyle("f", parent=base, fontName=BODY_FONT, fontSize=7.5, leading=10,
+        "foot": ParagraphStyle("f", parent=base, fontName=BODY_FONT, fontSize=7, leading=9,
                                textColor=colors.HexColor("#64748b"), alignment=TA_CENTER),
     }
 
@@ -132,139 +157,136 @@ def build_payslips(run, items, *, company_label=""):
     for index, item in enumerate(items):
         if index:
             story.append(PageBreak())
-        story.extend(_payslip(run, item, styles, company_label))
+        story.extend(_voucher(run, item, styles, letterhead or {}))
 
-    doc.build(buffer and story, onFirstPage=_noop, onLaterPages=_noop)
+    doc.build(story)
     buffer.seek(0)
     return buffer.read()
 
 
-def _noop(canvas, doc):
-    return None
-
-
-def _payslip(run, item, styles, company_label):
+def _voucher(run, item, styles, letterhead):
     P = lambda text, style="cell": Paragraph(str(text), styles[style])
     story = []
 
-    story.append(P(company_label or run["company"], "title"))
-    story.append(P(f"Payslip &mdash; {run['period']}  ({run['periodStart']} to {run['periodEnd']})", "sub"))
-    story.append(Spacer(1, 8))
+    # --- letterhead -----------------------------------------------------
+    story.append(P(letterhead.get("name") or run["company"], "co"))
+    if letterhead.get("registration"):
+        story.append(P(f"({letterhead['registration']})", "coSub"))
+    for line in letterhead.get("address") or []:
+        story.append(P(line, "coSub"))
+    story.append(Spacer(1, 6))
+    story.append(P("SALARY VOUCHER", "title"))
+    story.append(Spacer(1, 6))
 
-    # --- who ---
     who = Table(
-        [
-            [P("Employee", "h"), P(f"{item['name']} ({item['employeeCode']})"),
-             P("Daily Rate", "h"), P(_money(item["dailyRate"]), "cellR")],
-            [P("Position", "h"), P(item["position"] or "-"),
-             P("OT Rule", "h"), P(item["otRule"] or "-")],
-            [P("Bank", "h"), P(f"{item['bankName']} {item['bankAccountNo']}".strip() or "-"),
-             P("EPF / SOCSO No", "h"), P(f"{item['epfMemberNo'] or '-'} / {item['socsoNo'] or '-'}")],
-        ],
-        colWidths=[26 * mm, 62 * mm, 30 * mm, 56 * mm],
+        [[P(f"MONTH: {_month_label(run['period'])}"), P(f"PAY TO: {item['name']}")],
+         [P(item["employeeCode"]), P(f"IC NO: {_ic(item.get('socsoNo') or '')}")]],
+        colWidths=[89 * mm, 89 * mm],
     )
     who.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, -1), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
     story.append(who)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 5))
 
-    # --- what they worked, and what it earned ---
-    earnings = [
-        [P("Earnings", "h"), P("Worked", "h"), P("Amount (RM)", "h")],
-        # Monthly staff have no day count; printing "0 day(s)" next to a full
-        # month's pay reads like an error.
-        [P("Normal"),
-         P(f"{_num(item['dayUnits'])} day(s)" if Decimal(str(item["dayUnits"] or 0)) else "monthly"),
-         P(_money(item["normalPay"]), "cellR")],
+    # --- earnings against deductions ------------------------------------
+    # GROSS here means pay for work done. The adjustment is an addition
+    # applied after deductions, further down, which is why it is excluded
+    # even though the database folds it into gross_pay.
+    gross = (_d(item["normalPay"]) + _d(item["otPay"])
+             + _d(item["overnightPay"]) + _d(item["fixedAllowance"]))
+    other_deductions = _d(item["pcb"]) + _d(item["otherDeduction"])
+    total_deductions = (_d(item["epfEmployee"]) + _d(item["socsoEmployee"])
+                        + _d(item["eisEmployee"]) + other_deductions)
+    additions = _d(item["adjustment"])
+    net = gross - total_deductions + additions
+
+    rows = [
+        [P("EARNINGS / 收入"), P(""), P("DEDUCTIONS / 扣除"), P("")],
+        [P("BASIC PAY / 基本支付"), P(_rm(item["normalPay"]), "cellR"),
+         P("EMPLOYEE'S EPF 雇员公积金"), P(_rm(item["epfEmployee"]), "cellR")],
+        [P("OVERTIME / 超时"), P(_rm(item["otPay"]), "cellR"),
+         P("EMPLOYEE'S SOCSO 雇员社会保险"), P(_rm(item["socsoEmployee"]), "cellR")],
+        [P("OVERNIGHT / 通宵"), P(_rm(item["overnightPay"]), "cellR"),
+         P("EMPLOYEE'S EIS 雇员就业保险"), P(_rm(item["eisEmployee"]), "cellR")],
+        [P("ALLOWANCES / 津贴"), P(_rm(item["fixedAllowance"]), "cellR"),
+         P(f"OTHERS / 其他 : {item.get('otherDeductionNote') or ''}"),
+         P(_rm(other_deductions), "cellR")],
+        [P("GROSS PAY / 总薪金"), P(_rm(gross), "cellR"),
+         P("TOTAL DEDUCTIONS / 总扣除"), P(_rm(total_deductions), "cellR")],
     ]
-    if Decimal(str(item["otHours"] or 0)) or Decimal(str(item["otPay"] or 0)):
-        earnings.append([P("Overtime"), P(f"{_num(item['otHours'])} hour(s)"),
-                         P(_money(item["otPay"]), "cellR")])
-    if Decimal(str(item["overnightNights"] or 0)) or Decimal(str(item["overnightPay"] or 0)):
-        earnings.append([P("Overnight"),
-                         P(f"{_num(item['overnightNights'])} night(s), "
-                           f"{_num(item['overnightHours'])} hour(s)"),
-                         P(_money(item["overnightPay"]), "cellR")])
-    if Decimal(str(item["fixedAllowance"] or 0)):
-        earnings.append([P("Fixed allowance"), P(""),
-                         P(_money(item["fixedAllowance"]), "cellR")])
-    if Decimal(str(item["adjustment"] or 0)) != 0:
-        earnings.append([P("Adjustment"), P(item["adjustmentNote"] or ""),
-                         P(_money(item["adjustment"]), "cellR")])
-    earnings.append([P("Gross Pay", "h"), P(""), P(_money(item["grossPay"]), "cellR")])
-
-    story.append(_grid(earnings))
-    story.append(Spacer(1, 10))
-
-    # --- deductions ---
-    deductions = [
-        [P("Deductions", "h"), P(""), P("Amount (RM)", "h")],
-        [P("EPF (employee)"), P(""), P(_money(item["epfEmployee"]), "cellR")],
-        [P("SOCSO (employee)"), P(""), P(_money(item["socsoEmployee"]), "cellR")],
-        [P("EIS (employee)"), P(""), P(_money(item["eisEmployee"]), "cellR")],
-        [P("PCB"), P(""), P(_money(item["pcb"]), "cellR")],
-    ]
-    if Decimal(str(item["otherDeduction"] or 0)) != 0:
-        deductions.append([P("Other"), P(item["otherDeductionNote"] or ""),
-                           P(_money(item["otherDeduction"]), "cellR")])
-    total_deductions = (
-        Decimal(str(item["epfEmployee"] or 0)) + Decimal(str(item["socsoEmployee"] or 0))
-        + Decimal(str(item["eisEmployee"] or 0)) + Decimal(str(item["pcb"] or 0))
-        + Decimal(str(item["otherDeduction"] or 0))
-    )
-    deductions.append([P("Total Deductions", "h"), P(""), P(_money(total_deductions), "cellR")])
-    story.append(_grid(deductions))
-    story.append(Spacer(1, 10))
-
-    net = Table([[P("NET PAY (RM)", "h"), P(_money(item["netPay"]), "cellR")]],
-                colWidths=[124 * mm, 50 * mm])
-    net.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#e2e8f0")),
-        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#94a3b8")),
-        ("TOPPADDING", (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    grid = Table(rows, colWidths=[58 * mm, 31 * mm, 58 * mm, 31 * mm])
+    grid.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+        ("LINEAFTER", (1, 0), (1, -1), 0.7, colors.black),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.7, colors.black),
+        ("LINEABOVE", (0, -1), (-1, -1), 0.7, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f8fafc")),
     ]))
-    story.append(net)
-    story.append(Spacer(1, 8))
+    story.append(grid)
 
-    # An incomplete payslip must say so on the page, not only in the UI:
-    # printed paper outlives whatever warning the screen showed.
-    if not run.get("statutoryConfigured"):
-        warn = Table([[P(run.get("statutoryNote") or "", "warn")]], colWidths=[174 * mm])
-        warn.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fff7ed")),
-            ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#fdba74")),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        story.append(KeepTogether(warn))
-        story.append(Spacer(1, 6))
+    # --- additions and net ----------------------------------------------
+    net_table = Table(
+        [[P("TOTAL ADDITIONS :"), P(item.get("adjustmentNote") or "-"),
+          P(_rm(additions), "cellR")],
+         [P("NET PAY / 净薪资"), P(""), P(_rm(net), "cellR")]],
+        colWidths=[45 * mm, 102 * mm, 31 * mm],
+    )
+    net_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+        ("LINEABOVE", (0, 1), (-1, 1), 0.7, colors.black),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#e2e8f0")),
+    ]))
+    story.append(net_table)
+    story.append(Spacer(1, 5))
+
+    # --- employer side and signatures ------------------------------------
+    contribution = (_d(item["epfEmployer"]) + _d(item["socsoEmployer"])
+                    + _d(item["eisEmployer"]))
+    employer = Table(
+        [[P("EMPLOYER'S EPF / 雇主公积金"), P(_rm(item["epfEmployer"]), "cellR"),
+          P("PREPARED BY / 处理者:")],
+         [P("EMPLOYER'S SOCSO / 雇主社会保险"), P(_rm(item["socsoEmployer"]), "cellR"), P("")],
+         [P("EMPLOYER'S EIS / 雇主就业保险"), P(_rm(item["eisEmployer"]), "cellR"),
+          P("APPROVED BY / 批准者:")],
+         [P("TOTAL CONTRIBUTION / 雇主总供款"), P(_rm(contribution), "cellR"), P("")],
+         [P(""), P(""), P("EMPLOYEE'S SIGNATURE / 雇员签名:")]],
+        colWidths=[58 * mm, 31 * mm, 89 * mm],
+        rowHeights=[None, None, None, None, 16 * mm],
+    )
+    employer.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.black),
+        ("LINEAFTER", (1, 0), (1, -1), 0.7, colors.black),
+        ("LINEABOVE", (0, 3), (1, 3), 0.7, colors.black),
+        ("SPAN", (2, 0), (2, 1)),
+        ("SPAN", (2, 2), (2, 3)),
+    ]))
+    story.append(employer)
+    story.append(Spacer(1, 5))
+
+    # An incomplete payslip has to say so on the page. Printed paper outlives
+    # whatever warning happened to be on screen when it was printed.
+    note = run.get("statutoryNote") or ""
+    if note:
+        story.append(P(note, "warn"))
+        story.append(Spacer(1, 3))
 
     state = "LOCKED" if run.get("locked") else "DRAFT - not final"
     story.append(P(
-        f"{state} &middot; generated from payroll run {run['period']} &middot; "
+        f"{state} &middot; payroll run {run['period']} &middot; "
         f"{'locked ' + run['lockedAt'] if run.get('lockedAt') else 'not yet locked'}",
         "foot",
     ))
     return story
-
-
-def _grid(rows):
-    table = Table(rows, colWidths=[62 * mm, 62 * mm, 50 * mm])
-    table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor("#94a3b8")),
-        ("LINEABOVE", (0, -1), (-1, -1), 0.6, colors.HexColor("#94a3b8")),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
-    ]))
-    return table

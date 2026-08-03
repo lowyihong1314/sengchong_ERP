@@ -10,7 +10,8 @@ from flask import Blueprint, jsonify, request, send_file
 from io import BytesIO
 
 from ..services.payslip_pdf import build_payslips
-from .common import _find_company, _payroll, _require_admin_session
+from ..config import payslip_letterhead
+from .common import _payroll, _require_admin_session
 
 
 payroll_bp = Blueprint("payroll", __name__, url_prefix="/api")
@@ -137,8 +138,7 @@ def payslips_pdf(run_id):
     if not items:
         return jsonify({"error": "payroll_run_empty"}), 400
 
-    company = _find_company(run["company"]) or {}
-    pdf = build_payslips(run, items, company_label=company.get("label") or run["company"])
+    pdf = build_payslips(run, items, letterhead=payslip_letterhead(run["company"]))
 
     suffix = f"-{wanted}" if wanted else ""
     return send_file(
