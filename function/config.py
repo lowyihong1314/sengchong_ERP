@@ -16,6 +16,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # numbers are written the way SSM writes them: the twelve-digit number with the
 # old-style number after it, because counterparties still ask for either.
 #
+# The estate name really does differ between the two certificates -- Seng Chong
+# is registered in TAMAN PERINDUSTRIAN CEMERLANG and Manson Liang in TAMAN
+# PERINDUSTRIAN DESA CEMERLANG. It reads like a typo and is not one; each firm
+# is spelled here the way its own certificate spells it.
+#
 # Do not take any of this from the KWSP or PERKESO paperwork in the payroll
 # records. Those carry addresses the companies have since moved away from --
 # Jalan Bestari 29/1 on the KWSP statements, Jalan Beladau 16 on the Borang 8A
@@ -26,7 +31,7 @@ PAYSLIP_LETTERHEAD = {
         "registration": "201903110413 (JM0901707-D)",
         "address": [
             "NO. 14, JALAN CANGGIH 5,",
-            "TAMAN PERINDUSTRIAN DESA CEMERLANG,",
+            "TAMAN PERINDUSTRIAN CEMERLANG,",
             "81800 ULU TIRAM, JOHOR",
         ],
     },
