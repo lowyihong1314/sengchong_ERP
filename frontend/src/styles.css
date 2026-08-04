@@ -258,6 +258,33 @@ button {
   margin-bottom: 16px;
 }
 
+/* The drawer toggle. Hidden by default: at desktop width the rail is always on
+   screen, so a button to reveal it would do nothing.
+   
+   This has to sit ABOVE the mobile breakpoint that switches it back on. Both
+   rules have the same specificity, so the later one wins wherever it is --
+   putting this at the end of the file hides the button at every width,
+   including the one where it is the only way to open the menu. */
+.nav-toggle {
+  display: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-right: 4px;
+  /* .topbar is a wrapping flex row; without this the button is the first thing
+     squeezed when the company switcher needs room. */
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
+
+.nav-toggle:active {
+  background: var(--border);
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 1.45rem;
@@ -2999,27 +3026,4 @@ button:disabled {
   .upload-target strong {
     flex: 1;
   }
-}
-
-/* The drawer toggle. Hidden by default: at desktop width the rail is always
-   on screen, so a button to reveal it would be a button that does nothing.
-   The mobile breakpoint above turns it back on. */
-.nav-toggle {
-  display: none;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-right: 4px;
-  /* .topbar is a wrapping flex row; without this the button is the first
-     thing squeezed when the company switcher needs room. */
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: inherit;
-  cursor: pointer;
-}
-
-.nav-toggle:active {
-  background: var(--border);
 }
