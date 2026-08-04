@@ -8,8 +8,13 @@ import { MODULES } from "../modules.js";
  * Left-hand module rail, grouped by area. Clicking a tab always opens that
  * module's list. The group holding the active module is kept expanded, so
  * arriving by URL or by Back never leaves the current tab hidden.
+ *
+ * On a narrow screen the same rail becomes a drawer that slides in from the
+ * left, over the page rather than above it. `open` and `onClose` are only
+ * consulted at that width -- on a desktop the rail is always there and neither
+ * does anything.
  */
-export function Sidebar({ activeModule, onSelectModule }) {
+export function Sidebar({ activeModule, open, onClose, onSelectModule }) {
   const activeGroup = MODULE_GROUPS.find((group) => group.modules.includes(activeModule))?.key;
   const [openGroups, setOpenGroups] = React.useState(() => new Set(activeGroup ? [activeGroup] : []));
 
@@ -19,6 +24,28 @@ export function Sidebar({ activeModule, onSelectModule }) {
       current.has(activeGroup) ? current : new Set([...current, activeGroup])
     );
   }, [activeGroup]);
+
+  // Escape closes the drawer, which is what a phone keyboard user and anyone
+  // on a tablet with a keyboard will try first.
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  // The page behind a drawer must not scroll: on a phone, dragging the scrim
+  // otherwise moves the content underneath and the drawer looks broken.
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
 
   function toggleGroup(key) {
     setOpenGroups((current) => {
@@ -30,7 +57,12 @@ export function Sidebar({ activeModule, onSelectModule }) {
   }
 
   return (
-    <aside className="sidebar">
+    <>
+      {/* Rendered only while open so it cannot swallow clicks on a desktop,
+          where the drawer does not exist at all. */}
+      {open && <div className="sidebar-scrim" onClick={onClose} />}
+
+      <aside className={`sidebar${open ? " open" : ""}`}>
       <div className="brand">
         <div className="brand-mark">AC</div>
         <div>
@@ -66,7 +98,10 @@ export function Sidebar({ activeModule, onSelectModule }) {
                         className={`nav-item ${activeModule === key ? "active" : ""}`}
                         key={key}
                         type="button"
-                        onClick={() => onSelectModule(key)}
+                        onClick={() => {
+                          onSelectModule(key);
+                          onClose?.();
+                        }}
                       >
                         <Icon aria-hidden="true" size={17} />
                         <span>{module.label}</span>
@@ -79,6 +114,7 @@ export function Sidebar({ activeModule, onSelectModule }) {
           );
         })}
       </nav>
-    </aside>
+      </aside>
+    </>
   );
 }

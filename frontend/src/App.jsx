@@ -159,6 +159,7 @@ export function App() {
   const [docFilterClass, setDocFilterClass] = React.useState(initialRouteRef.current.docClass);
   const [docFilterStatus, setDocFilterStatus] = React.useState(initialRouteRef.current.docStatus);
   const [lastUploadResult, setLastUploadResult] = React.useState(null);
+  const [navOpen, setNavOpen] = React.useState(false);
   const [docQuery, setDocQuery] = React.useState("");
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
@@ -2609,6 +2610,8 @@ export function App() {
     <div className="app-shell">
       <Sidebar
         activeModule={activeModule}
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
         onSelectModule={(key) => {
           navigationHistoryRef.current = [];
           showModuleList(key);
@@ -2622,6 +2625,7 @@ export function App() {
           selectedCompany={selectedCompany}
           session={session}
           onLogout={logout}
+          onOpenNav={() => setNavOpen(true)}
           onRefresh={refreshModule}
           onSwitchCompany={switchCompany}
         />

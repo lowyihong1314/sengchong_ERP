@@ -1,4 +1,4 @@
-import { LogOut, RefreshCw } from "lucide-react";
+import { LogOut, Menu, RefreshCw } from "lucide-react";
 
 /** Module title, company switcher, signed-in user, logout and refresh. */
 export function Topbar({
@@ -7,11 +7,22 @@ export function Topbar({
   selectedCompany,
   session,
   onLogout,
+  onOpenNav,
   onRefresh,
   onSwitchCompany,
 }) {
   return (
     <header className="topbar">
+      {/* Only visible once the rail has collapsed into a drawer; CSS hides it
+          at desktop width, where the rail is always on screen. */}
+      <button
+        aria-label="Open menu"
+        className="nav-toggle"
+        type="button"
+        onClick={onOpenNav}
+      >
+        <Menu aria-hidden="true" size={20} />
+      </button>
       <div>
         <h1>{module.title}</h1>
         <p>{module.meta}</p>
