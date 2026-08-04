@@ -72,7 +72,7 @@ export const MODULE_GROUPS = [
   // Its own group rather than filed under Sales or Purchasing: the inbox takes
   // anything and works out which it is afterwards, so putting it under either
   // would be putting it under the answer to the question it exists to ask.
-  { key: "documents", label: "Documents", modules: ["documents"] },
+  { key: "documents", label: "Documents", modules: ["document-upload", "documents"] },
   {
     key: "sales",
     label: "Sales",

@@ -10,6 +10,7 @@ import {
   ReceiptText,
   ShieldCheck,
   ShoppingCart,
+  Upload,
   Users,
 } from "lucide-react";
 import {
@@ -1250,10 +1251,17 @@ export const MODULES = {
     icon: FileSpreadsheet,
     system: true,
   },
+  "document-upload": {
+    title: "Upload",
+    label: "Upload",
+    meta: "Photograph or drop files",
+    icon: Upload,
+    system: true,
+  },
   documents: {
     title: "Documents",
     label: "Documents",
-    meta: "Upload, photograph and file paperwork",
+    meta: "Everything filed, and what was read from it",
     icon: FileText,
     system: true,
   },

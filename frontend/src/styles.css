@@ -2686,32 +2686,6 @@ button:disabled {
 
 /* --- document inbox ---------------------------------------------------- */
 
-.drop-zone {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  margin: 14px 0;
-  padding: 18px 20px;
-  border: 2px dashed var(--border);
-  border-radius: 10px;
-  color: var(--muted);
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.drop-zone.dragging {
-  border-color: var(--primary);
-  background: rgba(37, 99, 235, 0.06);
-}
-
-.drop-zone strong {
-  display: block;
-  color: var(--text, #0f172a);
-}
-
-.drop-zone span {
-  font-size: 0.82rem;
-}
-
 .form-field.grow {
   flex: 1;
   min-width: 240px;
@@ -2842,4 +2816,175 @@ button:disabled {
 .status-bar.warn {
   background: #fef3c7;
   color: #92400e;
+}
+
+/* --- upload page ------------------------------------------------------- */
+/* Phone first. This is used standing in front of a stack of paper, so the
+   two targets are thumb-sized and everything else is out of the way. */
+
+.upload-page {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.upload-hero h2 {
+  margin: 0 0 4px;
+}
+
+.upload-hero p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.upload-targets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 6px;
+  border: 2px dashed transparent;
+  border-radius: 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-targets.dragging {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.upload-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  /* Deliberately tall: a thumb, not a mouse. */
+  min-height: 148px;
+  padding: 20px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+
+.upload-target:hover:not(:disabled) {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.upload-target:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.upload-target:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.upload-target.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.upload-target strong {
+  font-size: 1rem;
+}
+
+.upload-target span {
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.upload-progress {
+  margin-top: 18px;
+}
+
+.upload-progress-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+}
+
+.upload-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.upload-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.25s ease;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+  .upload-bar-fill { transition: none; }
+}
+
+.upload-receipt {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.upload-receipt div {
+  flex: 1;
+}
+
+.upload-receipt strong {
+  display: block;
+}
+
+.upload-receipt span {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.upload-note {
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .upload-targets {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-target {
+    /* Side by side once stacked: icon left, label right, so both fit above
+       the fold on a phone. */
+    flex-direction: row;
+    justify-content: flex-start;
+    min-height: 84px;
+    text-align: left;
+  }
+
+  .upload-target strong {
+    flex: 1;
+  }
 }

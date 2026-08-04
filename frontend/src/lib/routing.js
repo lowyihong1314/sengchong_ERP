@@ -52,11 +52,16 @@ export function normalizeRoute(route = {}) {
   const supportsDetail = !MODULES[moduleKey]?.system;
   const view = supportsDetail && route.view === "detail" && key ? "detail" : "list";
 
+  // Filters ride in the URL so a filtered list is a link somebody can send:
+  // ?module=documents&class=salary is a working address, not a screen state
+  // that has to be reproduced by clicking.
   return {
     moduleKey,
     view,
     key: view === "detail" ? key : "",
     query: String(route.query || ""),
+    docClass: String(route.docClass || ""),
+    docStatus: String(route.docStatus || ""),
   };
 }
 
@@ -72,6 +77,8 @@ export function getRouteFromUrl() {
     view: params.get("view") || (key ? "detail" : "list"),
     key,
     query: params.get("q") || "",
+    docClass: params.get("class") || "",
+    docStatus: params.get("status") || "",
   });
 }
 
@@ -82,6 +89,8 @@ export function getRouteUrl(route) {
   if (normalized.view !== "list") params.set("view", normalized.view);
   if (normalized.key) params.set("key", normalized.key);
   if (normalized.query) params.set("q", normalized.query);
+  if (normalized.docClass) params.set("class", normalized.docClass);
+  if (normalized.docStatus) params.set("status", normalized.docStatus);
   return `${window.location.pathname}?${params.toString()}`;
 }
 

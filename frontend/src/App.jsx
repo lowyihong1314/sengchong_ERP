@@ -9,6 +9,7 @@ import {
 import { BankingListControls } from "./components/BankingListControls.jsx";
 import { DebtorCandidatesPanel } from "./components/DebtorCandidatesPanel.jsx";
 import { DocumentCandidatesPanel } from "./components/DocumentCandidatesPanel.jsx";
+import { DocumentUploadPage } from "./pages/DocumentUploadPage.jsx";
 import { DocumentsPage } from "./pages/DocumentsPage.jsx";
 import { PayrollPage } from "./pages/PayrollPage.jsx";
 import { ProjectFromDebtorForm } from "./components/ProjectFromDebtorForm.jsx";
@@ -155,8 +156,9 @@ export function App() {
   const [documentsLoading, setDocumentsLoading] = React.useState(false);
   const [documentsUploading, setDocumentsUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState({ done: 0, total: 0 });
-  const [docFilterClass, setDocFilterClass] = React.useState("");
-  const [docFilterStatus, setDocFilterStatus] = React.useState("");
+  const [docFilterClass, setDocFilterClass] = React.useState(initialRouteRef.current.docClass);
+  const [docFilterStatus, setDocFilterStatus] = React.useState(initialRouteRef.current.docStatus);
+  const [lastUploadResult, setLastUploadResult] = React.useState(null);
   const [docQuery, setDocQuery] = React.useState("");
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
@@ -189,6 +191,8 @@ export function App() {
   React.useEffect(() => {
     replaceRouteUrl({
       moduleKey: activeModule,
+      docClass: docFilterClass,
+      docStatus: docFilterStatus,
       view,
       key: detailKey,
       query,
@@ -431,7 +435,7 @@ export function App() {
   // only way this page learns a row finished is to look again. Polls only
   // while something is outstanding, and stops on its own once the queue drains.
   React.useEffect(() => {
-    if (activeModule !== "documents") return undefined;
+    if (activeModule !== "documents" && activeModule !== "document-upload") return undefined;
     if (!documentCounts?.queued) return undefined;
     const timer = window.setInterval(() => loadDocuments({ quiet: true }), 3000);
     return () => window.clearInterval(timer);
@@ -738,6 +742,12 @@ export function App() {
     }
     if (moduleKey === "documents") {
       await loadDocuments();
+      return;
+    }
+    if (moduleKey === "document-upload") {
+      // Nothing to list here, but the queue count keeps the poller honest if
+      // the user walks over to the listing straight after uploading.
+      await loadDocuments({ quiet: true });
       return;
     }
     if (moduleKey === "website-content") {
@@ -1391,6 +1401,7 @@ export function App() {
         setUploadProgress({ done: Math.min(index + chunk.length, files.length), total: files.length });
         await loadDocuments({ quiet: true });
       }
+      setLastUploadResult({ stored, duplicates, skipped, rejected: rejected.length });
       const parts = [`${stored} filed`];
       if (skipped) parts.push(`${skipped} kept but not read`);
       if (duplicates) parts.push(`${duplicates} already on record`);
@@ -2615,7 +2626,16 @@ export function App() {
           onSwitchCompany={switchCompany}
         />
 
-        {activeModule === "documents" ? (
+        {activeModule === "document-upload" ? (
+          <DocumentUploadPage
+            lastResult={lastUploadResult}
+            status={status}
+            uploadProgress={uploadProgress}
+            uploading={documentsUploading}
+            onOpenListing={() => showModuleList("documents")}
+            onUpload={uploadDocuments}
+          />
+        ) : activeModule === "documents" ? (
           <DocumentsPage
             counts={documentCounts}
             detail={documentDetail}
@@ -2641,9 +2661,9 @@ export function App() {
               loadDocuments({ q: value, quiet: true });
             }}
             onReanalyse={reanalyseDocument}
+            onOpenUpload={() => showModuleList("document-upload")}
             onRefresh={() => loadDocuments()}
             onSelect={openDocument}
-            onUpload={uploadDocuments}
           />
         ) : activeModule === "payroll" ? (
           <PayrollPage

@@ -1,7 +1,5 @@
 import React from "react";
-import {
-  AlertTriangle, Camera, Copy, Download, FileText, RefreshCw, Trash2, Upload,
-} from "lucide-react";
+import { AlertTriangle, Copy, Download, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { formatValue } from "../lib/format.js";
 
@@ -23,25 +21,22 @@ const STATUS_LABELS = {
 };
 
 /**
- * The document inbox: throw anything in, it gets filed and read.
+ * Everything filed, and what was read from it.
  *
- * Upload returns as soon as the files are stored, so a phone sending fifty
- * photographs is not waiting on fifty model calls. The rows appear
- * immediately as "Queued" and fill in as the worker gets to them, which is why
- * this polls while anything is still outstanding.
+ * Reading happens in a worker after the upload has already returned, so a row
+ * arrives as "Queued" and fills in later -- which is why the caller polls this
+ * while anything is outstanding. Uploading lives on its own page: this one is
+ * for looking, and is no use on the phone that took the photographs.
  */
 export function DocumentsPage({
   documents,
   detail,
   counts,
   loading,
-  uploading,
-  uploadProgress,
   status,
   filterClass,
   filterStatus,
   query,
-  onUpload,
   onSelect,
   onReanalyse,
   onDelete,
@@ -49,22 +44,8 @@ export function DocumentsPage({
   onFilterClass,
   onFilterStatus,
   onQuery,
+  onOpenUpload,
 }) {
-  const fileRef = React.useRef(null);
-  const cameraRef = React.useRef(null);
-  const [dragging, setDragging] = React.useState(false);
-
-  function send(fileList) {
-    const files = Array.from(fileList || []);
-    if (files.length) onUpload(files);
-  }
-
-  function onDrop(event) {
-    event.preventDefault();
-    setDragging(false);
-    send(event.dataTransfer?.files);
-  }
-
   const byClass = counts?.byClass || {};
   const queued = counts?.queued || 0;
 
@@ -83,75 +64,12 @@ export function DocumentsPage({
             <RefreshCw aria-hidden="true" size={16} />
             Refresh
           </button>
-          {/* Separate input with capture= so a phone opens the camera straight
-              away instead of the file browser. */}
-          <button
-            className="secondary-button"
-            disabled={uploading}
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-          >
-            <Camera aria-hidden="true" size={16} />
-            Take Photo
-          </button>
-          <button
-            className="primary-button"
-            disabled={uploading}
-            type="button"
-            onClick={() => fileRef.current?.click()}
-          >
+          <button className="primary-button" type="button" onClick={onOpenUpload}>
             <Upload aria-hidden="true" size={16} />
-            {uploading ? "Uploading..." : "Upload Files"}
+            Upload
           </button>
         </div>
       </div>
-
-      <input
-        accept="image/*"
-        capture="environment"
-        hidden
-        ref={cameraRef}
-        type="file"
-        onChange={(event) => {
-          send(event.target.files);
-          event.target.value = "";
-        }}
-      />
-      <input
-        hidden
-        multiple
-        ref={fileRef}
-        type="file"
-        onChange={(event) => {
-          send(event.target.files);
-          event.target.value = "";
-        }}
-      />
-
-      <div
-        className={`drop-zone${dragging ? " dragging" : ""}`}
-        onDragLeave={() => setDragging(false)}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDrop={onDrop}
-      >
-        <FileText aria-hidden="true" size={22} />
-        <div>
-          <strong>Drop files here</strong>
-          <span>
-            Photos, PDFs, spreadsheets and Word files are read automatically.
-            Anything else is still kept, just not read.
-          </span>
-        </div>
-      </div>
-
-      {uploading && (
-        <div className="status-bar">
-          Uploading {uploadProgress.done} of {uploadProgress.total}...
-        </div>
-      )}
 
       <div className="toolbar">
         <label className="form-field">
