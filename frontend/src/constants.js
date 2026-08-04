@@ -69,6 +69,10 @@ export const OVERNIGHT_MODES = [
 // truth for "which module keys exist" (routing validates against it).
 export const MODULE_GROUPS = [
   { key: "projects", label: "Projects", modules: ["projects"] },
+  // Its own group rather than filed under Sales or Purchasing: the inbox takes
+  // anything and works out which it is afterwards, so putting it under either
+  // would be putting it under the answer to the question it exists to ask.
+  { key: "documents", label: "Documents", modules: ["documents"] },
   {
     key: "sales",
     label: "Sales",
