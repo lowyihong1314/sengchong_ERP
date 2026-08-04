@@ -1375,19 +1375,59 @@ export function App() {
   // Sent in small batches rather than one giant request. Fifty phone photos is
   // a few hundred megabytes; one multipart body that size is a single point of
   // failure and gives no progress until it either lands or times out.
+  //
+  // Batched by size as well as by count. Four files is a fine batch of ordinary
+  // photographs and far too much if they are 40MB scans -- nginx rejects the
+  // request outright at that point, and the whole batch is lost rather than
+  // the one file that was too big.
   const UPLOAD_BATCH = 4;
+  const UPLOAD_BATCH_BYTES = 60 * 1024 * 1024;
+  const MAX_FILE_BYTES = 40 * 1024 * 1024;
+
+  function batchFiles(files) {
+    const batches = [];
+    let current = [];
+    let bytes = 0;
+    for (const file of files) {
+      const size = file.size || 0;
+      if (current.length >= UPLOAD_BATCH || (current.length && bytes + size > UPLOAD_BATCH_BYTES)) {
+        batches.push(current);
+        current = [];
+        bytes = 0;
+      }
+      current.push(file);
+      bytes += size;
+    }
+    if (current.length) batches.push(current);
+    return batches;
+  }
 
   async function uploadDocuments(files) {
     if (!files.length) return;
+    // Caught here rather than at the server: an oversized file makes nginx
+    // reject the whole request, taking the files batched with it.
+    const tooBig = files.filter((file) => (file.size || 0) > MAX_FILE_BYTES);
+    const sendable = files.filter((file) => (file.size || 0) <= MAX_FILE_BYTES);
+    if (!sendable.length) {
+      setStatus({
+        tone: "error",
+        text: `${tooBig.length} file(s) are over ${MAX_FILE_BYTES / 1024 / 1024}MB and were not sent`,
+      });
+      return;
+    }
+
     setDocumentsUploading(true);
-    setUploadProgress({ done: 0, total: files.length });
+    setUploadProgress({ done: 0, total: sendable.length });
     let stored = 0;
     let duplicates = 0;
     let skipped = 0;
-    const rejected = [];
+    const rejected = tooBig.map((file) => ({
+      filename: file.name,
+      error: `Over ${MAX_FILE_BYTES / 1024 / 1024}MB`,
+    }));
+    let done = 0;
     try {
-      for (let index = 0; index < files.length; index += UPLOAD_BATCH) {
-        const chunk = files.slice(index, index + UPLOAD_BATCH);
+      for (const chunk of batchFiles(sendable)) {
         const form = new FormData();
         form.append("company", selectedCompany);
         chunk.forEach((file) => form.append("files", file));
@@ -1400,7 +1440,8 @@ export function App() {
         duplicates += result.duplicates?.length || 0;
         skipped += result.skipped || 0;
         (result.rejected || []).forEach((row) => rejected.push(row));
-        setUploadProgress({ done: Math.min(index + chunk.length, files.length), total: files.length });
+        done += chunk.length;
+        setUploadProgress({ done, total: sendable.length });
         await loadDocuments({ quiet: true });
       }
       setLastUploadResult({ stored, duplicates, skipped, rejected: rejected.length });
@@ -1411,7 +1452,13 @@ export function App() {
       setStatus({ tone: rejected.length ? "warn" : "ok", text: parts.join(", ") });
     } catch (error) {
       handleAuthError(error);
-      setStatus({ tone: "error", text: error.message });
+      setStatus({
+        tone: "error",
+        text:
+          error.status === 413
+            ? "The server refused the batch as too large. Try fewer files at a time."
+            : error.message,
+      });
     } finally {
       setDocumentsUploading(false);
       setUploadProgress({ done: 0, total: 0 });
