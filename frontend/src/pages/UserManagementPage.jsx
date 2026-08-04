@@ -14,6 +14,7 @@ export function UserManagementPage({
   saving,
   status,
   users,
+  onChangeDefaultCompany,
   onDelete,
   onDraftChange,
   onRefresh,
@@ -149,7 +150,27 @@ export function UserManagementPage({
                           <span>{username}</span>
                         </td>
                         <td>{readValue(user, "role") || "user"}</td>
-                        <td>{readValue(user, "defaultCompany") || "-"}</td>
+                        <td>
+                          {/* Editable in place: changing where somebody lands
+                              should not mean deleting and recreating them,
+                              which would also mean setting a new password. */}
+                          <select
+                            aria-label={`Default company for ${username}`}
+                            className="cell-input"
+                            disabled={saving}
+                            value={readValue(user, "defaultCompany") || ""}
+                            onChange={(event) =>
+                              onChangeDefaultCompany(username, event.target.value)
+                            }
+                          >
+                            <option value="">Use login selection</option>
+                            {companies.map((company) => (
+                              <option key={company.value} value={company.value}>
+                                {company.value}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
                         <td>{formatValue(readValue(user, "updatedAt")) || "-"}</td>
                         <td>
                           <div className="user-row-actions">

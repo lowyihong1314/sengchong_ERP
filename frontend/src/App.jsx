@@ -377,6 +377,7 @@ export function App() {
     addRdpIp,
     applyRdpAllowList,
     clearAdminSettingsOnSignOut,
+    changeDefaultCompany,
     deleteUser,
     loadRdpAllowList,
     loadUsers,
@@ -2726,6 +2727,7 @@ export function App() {
             saving={userManagementSaving}
             status={status}
             users={users}
+            onChangeDefaultCompany={changeDefaultCompany}
             onDelete={deleteUser}
             onDraftChange={updateUserDraftField}
             onRefresh={() => loadUsers()}

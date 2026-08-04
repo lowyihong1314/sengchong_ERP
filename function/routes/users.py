@@ -53,6 +53,41 @@ def save_user():
     return jsonify(user), 201
 
 
+@users_bp.patch("/users/<path:username>")
+def update_user(username):
+    """
+    Change an existing user without touching their password.
+
+    Separate from the POST above on purpose: that one upserts and takes a
+    password, so using it to change somebody's default company would reset
+    their password as a side effect.
+    """
+    _, auth_error = _require_admin_session()
+    if auth_error:
+        return auth_error
+
+    payload = request.get_json(silent=True) or {}
+    if "defaultCompany" not in payload and "default_company" not in payload:
+        return jsonify({"error": "Nothing to change."}), 400
+
+    default_company = payload.get("defaultCompany")
+    if default_company is None:
+        default_company = payload.get("default_company")
+    default_company = str(default_company or "").strip()
+
+    # Empty is allowed and means "wherever they pick at login".
+    if default_company:
+        company = _find_company(default_company)
+        if not company:
+            return jsonify({"error": "Company database is not allowed."}), 400
+        default_company = company["value"]
+
+    user = _user_data().set_default_company(username, default_company)
+    if not user:
+        return jsonify({"error": "user_not_found"}), 404
+    return jsonify(user)
+
+
 @users_bp.delete("/users/<path:username>")
 def delete_user(username):
     _, auth_error = _require_admin_session()

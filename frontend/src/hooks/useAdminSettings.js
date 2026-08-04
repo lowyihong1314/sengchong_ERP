@@ -219,6 +219,33 @@ export function useAdminSettings({
     }
   }
 
+  async function changeDefaultCompany(username, company) {
+    const target = String(username || "").trim().toLowerCase();
+    if (!target) return;
+    try {
+      setUserManagementSaving(true);
+      // PATCH, not the upsert POST -- that one takes a password and would
+      // reset theirs as a side effect of changing a company.
+      await requestJson(`/api/users/${encodeURIComponent(target)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ defaultCompany: company }),
+      });
+      await loadUsers({ showStatus: false });
+      setStatus({
+        tone: "ok",
+        text: company
+          ? `${target} now starts in ${company}`
+          : `${target} will use whatever they pick at login`,
+      });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setUserManagementSaving(false);
+    }
+  }
+
   async function deleteUser(username) {
     const target = String(username || "").trim().toLowerCase();
     if (!target) return;
@@ -275,6 +302,7 @@ export function useAdminSettings({
     addRdpIp,
     applyRdpAllowList,
     clearAdminSettingsOnSignOut,
+    changeDefaultCompany,
     deleteUser,
     loadRdpAllowList,
     loadUsers,
