@@ -160,6 +160,7 @@ export function App() {
   const [docFilterStatus, setDocFilterStatus] = React.useState(initialRouteRef.current.docStatus);
   const [lastUploadResult, setLastUploadResult] = React.useState(null);
   const [navOpen, setNavOpen] = React.useState(false);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = React.useState("");
   const [docQuery, setDocQuery] = React.useState("");
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
@@ -1466,10 +1467,58 @@ export function App() {
     }
   }
 
+  // Both of these fetch with the token and hand back a blob rather than
+  // linking. Auth is a Bearer token, and neither an <img src> nor an <a href>
+  // sends a header -- a direct URL is a 401 and an empty box.
+  async function authedBlob(path) {
+    const response = await fetch(path, { headers: authHeaders() });
+    if (!response.ok) {
+      const error = new Error(`Request failed: ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    return response.blob();
+  }
+
   async function openDocument(documentId) {
     try {
       const detail = await requestJson(`/api/documents/${documentId}`, { headers: authHeaders() });
       setDocumentDetail(detail);
+
+      // One object URL at a time: without revoking the last one, browsing a
+      // list of fifty pins fifty images in memory until the tab is closed.
+      setDocumentPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return "";
+      });
+      if (detail.previewPath) {
+        try {
+          const blob = await authedBlob(`/api/documents/${documentId}/preview`);
+          setDocumentPreviewUrl(URL.createObjectURL(blob));
+        } catch (previewError) {
+          // The rest of the detail is still worth showing without the picture.
+        }
+      }
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    }
+  }
+
+  async function downloadDocument(documentId) {
+    const row = documents.find((item) => item.id === documentId);
+    try {
+      const blob = await authedBlob(`/api/documents/${documentId}/file`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = row?.filename || documentId;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Revoked late: Chrome aborts the download if the object URL dies before
+      // it has started reading it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) {
       handleAuthError(error);
       setStatus({ tone: "error", text: error.message });
@@ -2703,7 +2752,9 @@ export function App() {
             status={status}
             uploadProgress={uploadProgress}
             uploading={documentsUploading}
+            previewUrl={documentPreviewUrl}
             onDelete={deleteDocument}
+            onDownload={downloadDocument}
             onFilterClass={(value) => {
               setDocFilterClass(value);
               loadDocuments({ docClass: value });

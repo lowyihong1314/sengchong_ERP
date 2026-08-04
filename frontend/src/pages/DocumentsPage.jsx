@@ -40,11 +40,13 @@ export function DocumentsPage({
   onSelect,
   onReanalyse,
   onDelete,
+  onDownload,
   onRefresh,
   onFilterClass,
   onFilterStatus,
   onQuery,
   onOpenUpload,
+  previewUrl,
 }) {
   const byClass = counts?.byClass || {};
   const queued = counts?.queued || 0;
@@ -206,23 +208,27 @@ export function DocumentsPage({
                 </div>
               )}
 
-              {detail.previewPath && (
+              {/* Fetched with the token and shown from a blob, not linked.
+                  Auth is a Bearer token, and the browser sends no header when
+                  it loads an <img src>, so a direct URL here is a 401 and an
+                  empty box. */}
+              {detail.previewPath && previewUrl && (
                 <img
                   alt={`Preview of ${detail.filename}`}
                   className="document-preview"
-                  src={`/api/documents/${detail.id}/preview`}
+                  src={previewUrl}
                 />
               )}
 
               <div className="detail-actions">
-                <a
+                <button
                   className="secondary-button"
-                  href={`/api/documents/${detail.id}/file`}
-                  rel="noreferrer"
+                  type="button"
+                  onClick={() => onDownload(detail.id)}
                 >
                   <Download aria-hidden="true" size={15} />
                   Original
-                </a>
+                </button>
                 {detail.status !== "skipped" && (
                   <button
                     className="ghost-button"
