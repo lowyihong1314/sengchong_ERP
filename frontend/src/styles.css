@@ -2683,3 +2683,163 @@ button:disabled {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* --- document inbox ---------------------------------------------------- */
+
+.drop-zone {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 18px 20px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.drop-zone.dragging {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.drop-zone strong {
+  display: block;
+  color: var(--text, #0f172a);
+}
+
+.drop-zone span {
+  font-size: 0.82rem;
+}
+
+.form-field.grow {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* Table and detail side by side, stacking on a narrow screen -- this page is
+   used from a phone, which is where the photographs come from. */
+.documents-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .documents-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.documents-table tbody tr {
+  cursor: pointer;
+}
+
+.documents-table tbody tr.selected {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.documents-table tbody td strong {
+  display: block;
+}
+
+.documents-table tbody td span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.doc-chip,
+.doc-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.doc-chip { background: #e2e8f0; color: #334155; }
+.doc-chip.sales { background: #dcfce7; color: #166534; }
+.doc-chip.purchase { background: #dbeafe; color: #1e40af; }
+.doc-chip.salary { background: #fef3c7; color: #92400e; }
+.doc-chip.project_image { background: #f3e8ff; color: #6b21a8; }
+
+.doc-status { background: #e2e8f0; color: #475569; }
+.doc-status.pending,
+.doc-status.analysing { background: #fef9c3; color: #854d0e; }
+.doc-status.analysed { background: #dcfce7; color: #166534; }
+.doc-status.failed { background: #fee2e2; color: #991b1b; }
+
+.dupe-flag {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: 6px;
+  color: #b45309;
+  font-size: 0.72rem;
+}
+
+.document-detail {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.document-detail header {
+  margin-bottom: 10px;
+}
+
+.document-detail header strong {
+  display: block;
+  word-break: break-all;
+}
+
+.document-detail header span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.document-preview {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.raw-json-label {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* The extraction verbatim. Scrolls in its own box so a long payload cannot
+   push the page sideways. */
+.raw-json {
+  max-height: 320px;
+  margin: 6px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.status-bar.warn {
+  background: #fef3c7;
+  color: #92400e;
+}

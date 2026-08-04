@@ -50,6 +50,10 @@ def _project_photos():
     return current_app.extensions["project_photos"]
 
 
+def _documents():
+    return current_app.extensions["documents"]
+
+
 def _sengchong_content():
     return current_app.extensions["sengchong_content"]
 

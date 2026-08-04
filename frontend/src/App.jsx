@@ -9,6 +9,7 @@ import {
 import { BankingListControls } from "./components/BankingListControls.jsx";
 import { DebtorCandidatesPanel } from "./components/DebtorCandidatesPanel.jsx";
 import { DocumentCandidatesPanel } from "./components/DocumentCandidatesPanel.jsx";
+import { DocumentsPage } from "./pages/DocumentsPage.jsx";
 import { PayrollPage } from "./pages/PayrollPage.jsx";
 import { ProjectFromDebtorForm } from "./components/ProjectFromDebtorForm.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -148,6 +149,15 @@ export function App() {
   const [payrollLoading, setPayrollLoading] = React.useState(false);
   const [payrollSaving, setPayrollSaving] = React.useState(false);
   const [payrollEmployees, setPayrollEmployees] = React.useState([]);
+  const [documents, setDocuments] = React.useState([]);
+  const [documentDetail, setDocumentDetail] = React.useState(null);
+  const [documentCounts, setDocumentCounts] = React.useState(null);
+  const [documentsLoading, setDocumentsLoading] = React.useState(false);
+  const [documentsUploading, setDocumentsUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState({ done: 0, total: 0 });
+  const [docFilterClass, setDocFilterClass] = React.useState("");
+  const [docFilterStatus, setDocFilterStatus] = React.useState("");
+  const [docQuery, setDocQuery] = React.useState("");
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
   // them even though they are created later in the render.
@@ -384,6 +394,48 @@ export function App() {
     signOut: clearAdminSettingsOnSignOut,
   };
 
+
+  const loadDocuments = React.useCallback(
+    async (options = {}) => {
+      if (!token) return;
+      try {
+        if (options.quiet !== true) setDocumentsLoading(true);
+        const params = new URLSearchParams({ company: "all", limit: "300" });
+        if (options.docClass ?? docFilterClass) params.set("class", options.docClass ?? docFilterClass);
+        if (options.docStatus ?? docFilterStatus) params.set("status", options.docStatus ?? docFilterStatus);
+        if (options.q ?? docQuery) params.set("q", options.q ?? docQuery);
+
+        const [list, meta] = await Promise.all([
+          requestJson(`/api/documents?${params}`, { headers: authHeaders() }),
+          requestJson("/api/documents/meta?company=all", { headers: authHeaders() }),
+        ]);
+        const rows = normalizeRows(list);
+        setDocuments(rows);
+        setDocumentCounts(meta);
+        if (options.quiet !== true) {
+          const nextStatus = { tone: "ok", text: `${rows.length} document(s)` };
+          updateModuleStage("documents", { rows: [], loaded: true, status: nextStatus });
+          if (activeModuleRef.current === "documents") setStatus(nextStatus);
+        }
+      } catch (error) {
+        handleAuthError(error);
+        setStatus({ tone: "error", text: error.message });
+      } finally {
+        setDocumentsLoading(false);
+      }
+    },
+    [authHeaders, docFilterClass, docFilterStatus, docQuery, handleAuthError, token, updateModuleStage]
+  );
+
+  // The worker reads documents after the upload has already returned, so the
+  // only way this page learns a row finished is to look again. Polls only
+  // while something is outstanding, and stops on its own once the queue drains.
+  React.useEffect(() => {
+    if (activeModule !== "documents") return undefined;
+    if (!documentCounts?.queued) return undefined;
+    const timer = window.setInterval(() => loadDocuments({ quiet: true }), 3000);
+    return () => window.clearInterval(timer);
+  }, [activeModule, documentCounts?.queued, loadDocuments]);
 
   const loadPayroll = React.useCallback(
     async (options = {}) => {
@@ -682,6 +734,10 @@ export function App() {
     }
     if (moduleKey === "payroll") {
       await loadPayroll();
+      return;
+    }
+    if (moduleKey === "documents") {
+      await loadDocuments();
       return;
     }
     if (moduleKey === "website-content") {
@@ -1301,6 +1357,94 @@ export function App() {
       setStatus({ tone: "error", text: error.message });
     } finally {
       setPayrollSaving(false);
+    }
+  }
+
+  // Sent in small batches rather than one giant request. Fifty phone photos is
+  // a few hundred megabytes; one multipart body that size is a single point of
+  // failure and gives no progress until it either lands or times out.
+  const UPLOAD_BATCH = 4;
+
+  async function uploadDocuments(files) {
+    if (!files.length) return;
+    setDocumentsUploading(true);
+    setUploadProgress({ done: 0, total: files.length });
+    let stored = 0;
+    let duplicates = 0;
+    let skipped = 0;
+    const rejected = [];
+    try {
+      for (let index = 0; index < files.length; index += UPLOAD_BATCH) {
+        const chunk = files.slice(index, index + UPLOAD_BATCH);
+        const form = new FormData();
+        form.append("company", selectedCompany);
+        chunk.forEach((file) => form.append("files", file));
+        const result = await requestJson("/api/documents", {
+          method: "POST",
+          headers: authHeaders(),
+          body: form,
+        });
+        stored += result.stored?.length || 0;
+        duplicates += result.duplicates?.length || 0;
+        skipped += result.skipped || 0;
+        (result.rejected || []).forEach((row) => rejected.push(row));
+        setUploadProgress({ done: Math.min(index + chunk.length, files.length), total: files.length });
+        await loadDocuments({ quiet: true });
+      }
+      const parts = [`${stored} filed`];
+      if (skipped) parts.push(`${skipped} kept but not read`);
+      if (duplicates) parts.push(`${duplicates} already on record`);
+      if (rejected.length) parts.push(`${rejected.length} rejected`);
+      setStatus({ tone: rejected.length ? "warn" : "ok", text: parts.join(", ") });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    } finally {
+      setDocumentsUploading(false);
+      setUploadProgress({ done: 0, total: 0 });
+      await loadDocuments({ quiet: true });
+    }
+  }
+
+  async function openDocument(documentId) {
+    try {
+      const detail = await requestJson(`/api/documents/${documentId}`, { headers: authHeaders() });
+      setDocumentDetail(detail);
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    }
+  }
+
+  async function reanalyseDocument(documentId) {
+    try {
+      await requestJson(`/api/documents/${documentId}/analyse`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      setStatus({ tone: "ok", text: "Queued to be read again" });
+      await loadDocuments({ quiet: true });
+      await openDocument(documentId);
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
+    }
+  }
+
+  async function deleteDocument(documentId) {
+    const row = documents.find((item) => item.id === documentId);
+    if (!window.confirm(`Delete ${row?.filename || "this document"}? The file is removed too.`)) return;
+    try {
+      await requestJson(`/api/documents/${documentId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (documentDetail?.id === documentId) setDocumentDetail(null);
+      setStatus({ tone: "ok", text: "Deleted" });
+      await loadDocuments({ quiet: true });
+    } catch (error) {
+      handleAuthError(error);
+      setStatus({ tone: "error", text: error.message });
     }
   }
 
@@ -2471,7 +2615,37 @@ export function App() {
           onSwitchCompany={switchCompany}
         />
 
-        {activeModule === "payroll" ? (
+        {activeModule === "documents" ? (
+          <DocumentsPage
+            counts={documentCounts}
+            detail={documentDetail}
+            documents={documents}
+            filterClass={docFilterClass}
+            filterStatus={docFilterStatus}
+            loading={documentsLoading}
+            query={docQuery}
+            status={status}
+            uploadProgress={uploadProgress}
+            uploading={documentsUploading}
+            onDelete={deleteDocument}
+            onFilterClass={(value) => {
+              setDocFilterClass(value);
+              loadDocuments({ docClass: value });
+            }}
+            onFilterStatus={(value) => {
+              setDocFilterStatus(value);
+              loadDocuments({ docStatus: value });
+            }}
+            onQuery={(value) => {
+              setDocQuery(value);
+              loadDocuments({ q: value, quiet: true });
+            }}
+            onReanalyse={reanalyseDocument}
+            onRefresh={() => loadDocuments()}
+            onSelect={openDocument}
+            onUpload={uploadDocuments}
+          />
+        ) : activeModule === "payroll" ? (
           <PayrollPage
             loading={payrollLoading}
             period={payrollPeriod}

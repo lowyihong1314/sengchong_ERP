@@ -7,3 +7,8 @@ Pillow
 gunicorn
 
 psycopg[binary]>=3.2
+
+# Document inbox: .xlsx and .docx are read as text rather than
+# photographed, so the model gets the exact cell values.
+openpyxl
+python-docx

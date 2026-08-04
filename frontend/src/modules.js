@@ -1250,6 +1250,13 @@ export const MODULES = {
     icon: FileSpreadsheet,
     system: true,
   },
+  documents: {
+    title: "Documents",
+    label: "Documents",
+    meta: "Upload, photograph and file paperwork",
+    icon: FileText,
+    system: true,
+  },
   "user-management": {
     title: "User Management",
     label: "User Management",

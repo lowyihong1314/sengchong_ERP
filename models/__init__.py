@@ -7,6 +7,7 @@ db = SQLAlchemy()
 # Import every model module so that `db.metadata` is fully populated before
 # Alembic autogenerates a migration. Keep this list in sync with the files in
 # this package; each one mirrors the same-named module under function/.
+from models import documents  # noqa: E402,F401
 from models import employee_data  # noqa: E402,F401
 from models import payroll  # noqa: E402,F401
 from models import project_data  # noqa: E402,F401

@@ -2,9 +2,10 @@ from flask import Flask
 
 from models import db
 
-from .config import Settings
+from .config import Settings, env
 from .routes.auth import auth_bp
 from .routes.autocount import autocount_bp
+from .routes.documents import documents_bp
 from .routes.employees import employees_bp
 from .routes.health import health_bp
 from .routes.projects import projects_bp
@@ -24,6 +25,7 @@ from .services.project_data import ProjectDataStore
 from .services.salary_data import SalaryDataStore
 from .services.payroll import PayrollStore
 from .services.work_entry import WorkEntryStore
+from .services.documents import DocumentStore
 from .services.project_photos import ProjectPhotoStore
 from .services.sengchong_content import SengchongContentStore
 from .services.sql_reader import SqlReadService
@@ -48,6 +50,16 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(app)
 
+    # Document inbox. The key is read here rather than in the service so the
+    # worker process and the request process agree on where it comes from.
+    app.config["OPENAI_API_KEY"] = env("OPENAI_API_KEY", "")
+    app.config["OPENAI_VISION_MODEL"] = env("OPENAI_VISION_MODEL", "gpt-4o")
+
+    # A phone batch is uploaded a few files at a time, not all fifty at once,
+    # so this caps one request rather than one batch. It has to clear nginx's
+    # client_max_body_size or the rejection arrives before Flask sees it.
+    app.config["MAX_CONTENT_LENGTH"] = 120 * 1024 * 1024
+
     app.extensions["sessions"] = SessionStore(settings.session_ttl_seconds)
     app.extensions["autocount_sdk"] = AutoCountSdk(settings)
     app.extensions["sql_reader"] = SqlReadService(settings)
@@ -58,6 +70,7 @@ def create_app():
     app.extensions["work_entries"] = WorkEntryStore()
     app.extensions["payroll"] = PayrollStore()
     app.extensions["project_photos"] = ProjectPhotoStore(settings.base_dir)
+    app.extensions["documents"] = DocumentStore(settings.base_dir)
     app.extensions["sengchong_content"] = SengchongContentStore()
 
     # Seeding needs db.session, so it runs in an app context rather than in
@@ -71,6 +84,7 @@ def create_app():
         users_bp,
         rdp_bp,
         website_bp,
+        documents_bp,
         projects_bp,
         employees_bp,
         salary_bp,
