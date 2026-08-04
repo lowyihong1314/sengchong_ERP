@@ -13,6 +13,8 @@ import { Camera, CheckCircle2, FolderOpen, ListChecks, Loader2 } from "lucide-re
  * goes to the listing.
  */
 export function DocumentUploadPage({
+  company,
+  companyLabel,
   uploading,
   uploadProgress,
   lastResult,
@@ -40,6 +42,13 @@ export function DocumentUploadPage({
         <p>
           Invoices, delivery orders, payslips, site photos. Anything else is
           kept too, it just is not read.
+        </p>
+        {/* Which books these land in. Stated here because the page has no
+            company control of its own -- it follows the one in the top bar,
+            and filing a stack under the wrong company is not something to
+            discover afterwards. */}
+        <p className="upload-company">
+          Filing into <strong>{companyLabel || company || "-"}</strong>
         </p>
       </div>
 

@@ -85,7 +85,14 @@ def update_user(username):
     user = _user_data().set_default_company(username, default_company)
     if not user:
         return jsonify({"error": "user_not_found"}), 404
-    return jsonify(user)
+
+    # Reach anyone already signed in. Without this the change waits for their
+    # session to expire, and until then the setting says one company while
+    # they are working in another.
+    moved = 0
+    if default_company:
+        moved = _sessions().set_database_for_user(username, default_company)
+    return jsonify({**user, "sessionsMoved": moved})
 
 
 @users_bp.delete("/users/<path:username>")

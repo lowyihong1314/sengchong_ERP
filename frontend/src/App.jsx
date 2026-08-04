@@ -2633,6 +2633,10 @@ export function App() {
 
         {activeModule === "document-upload" ? (
           <DocumentUploadPage
+            company={selectedCompany}
+            companyLabel={
+              companies.find((item) => item.value === selectedCompany)?.label || selectedCompany
+            }
             lastResult={lastUploadResult}
             status={status}
             uploadProgress={uploadProgress}

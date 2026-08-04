@@ -3027,3 +3027,12 @@ button:disabled {
     flex: 1;
   }
 }
+
+.upload-company {
+  margin: 0 0 18px !important;
+  font-size: 0.86rem;
+}
+
+.upload-company strong {
+  color: var(--primary);
+}

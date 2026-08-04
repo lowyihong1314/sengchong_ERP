@@ -73,6 +73,31 @@ class SessionStore:
         db.session.commit()
         return result.rowcount or 0
 
+    def set_database_for_user(self, username, database):
+        """
+        Move every live session of one account onto a company. Returns how many.
+
+        A session records the company it was opened against, so a default
+        changed afterwards would not reach anyone already signed in -- they
+        would keep working in the old company until the session expired, with
+        the setting on screen saying otherwise. An admin moving somebody
+        between companies means now, not at their next login.
+
+        Only for the admin path. The login and company-switch handlers write
+        the default *from* the session and must not be fed back into it.
+        """
+        target = str(username or "").strip().lower()
+        if not target:
+            return 0
+
+        result = db.session.execute(
+            db.update(ErpSession)
+            .where(db.func.lower(ErpSession.username) == target)
+            .values(database_name=database)
+        )
+        db.session.commit()
+        return result.rowcount or 0
+
     def cleanup(self):
         db.session.execute(db.delete(ErpSession).where(ErpSession.expires_at <= now()))
         db.session.commit()
