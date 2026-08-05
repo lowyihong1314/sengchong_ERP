@@ -9,6 +9,7 @@ import datetime as dt
 
 from flask import Blueprint, jsonify, request, send_file
 
+from ..services.documents import PAGE_SIZE
 from .common import _documents, _require_admin_session
 
 documents_bp = Blueprint("documents", __name__, url_prefix="/api")
@@ -54,7 +55,7 @@ def list_documents():
         date_from=_date_arg("from"),
         date_to=_date_arg("to"),
         page=request.args.get("page") or 1,
-        page_size=request.args.get("pageSize") or 50,
+        page_size=request.args.get("pageSize") or PAGE_SIZE,
     ))
 
 

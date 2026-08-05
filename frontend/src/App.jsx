@@ -415,7 +415,7 @@ export function App() {
         // in the same call that sets its state -- setState is not immediate,
         // and reading the state here would fetch the previous filter.
         const pick = (key, fallback) => (options[key] !== undefined ? options[key] : fallback);
-        const params = new URLSearchParams({ company: "all", pageSize: "50" });
+        const params = new URLSearchParams({ company: "all", pageSize: "11" });
         params.set("page", String(pick("page", docPage)));
         const cls = pick("docClass", docFilterClass);
         const st = pick("docStatus", docFilterStatus);

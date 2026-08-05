@@ -56,6 +56,11 @@ MAX_BYTES = 40 * 1024 * 1024
 # just has nothing to say about it.
 SKIPPED_STATUS = "skipped"
 
+# Rows per page in the listing. Small on purpose: the detail pane beside the
+# table is the point of the page, and a table taller than it turns reviewing a
+# document into scrolling back and forth.
+PAGE_SIZE = 11
+
 
 class DocumentStore:
     def __init__(self, base_dir):
@@ -302,7 +307,7 @@ class DocumentStore:
     # ------------------------------------------------------------------ reads
 
     def list_documents(self, company, *, doc_class="", status="", query="",
-                       date_from=None, date_to=None, page=1, page_size=50):
+                       date_from=None, date_to=None, page=1, page_size=PAGE_SIZE):
         """
         One page of documents, with the total so the caller can page through.
 
@@ -335,7 +340,7 @@ class DocumentStore:
             ))
 
         page = max(1, int(page or 1))
-        page_size = max(1, min(int(page_size or 50), 200))
+        page_size = max(1, min(int(page_size or PAGE_SIZE), 200))
         total = db.session.scalar(
             db.select(db.func.count()).select_from(ErpDocument).where(*filters)
         ) or 0
