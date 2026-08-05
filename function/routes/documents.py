@@ -5,11 +5,26 @@ Upload returns as soon as the files are on disk. Reading them happens in a
 detached worker, so a phone uploading fifty photographs is not holding a
 request open while each one is sent to a model. Poll the list for status.
 """
+import datetime as dt
+
 from flask import Blueprint, jsonify, request, send_file
 
 from .common import _documents, _require_admin_session
 
 documents_bp = Blueprint("documents", __name__, url_prefix="/api")
+
+
+def _date_arg(name):
+    """A YYYY-MM-DD query argument, or None. A malformed one is ignored
+    rather than rejected -- a half-typed date should narrow nothing, not
+    error the page somebody is typing into."""
+    raw = (request.args.get(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        return dt.date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
 
 
 @documents_bp.get("/documents/meta")
@@ -31,13 +46,16 @@ def list_documents():
     company = "" if request.args.get("company") == "all" else (
         request.args.get("company") or session["database"]
     )
-    return jsonify({"data": _documents().list_documents(
+    return jsonify(_documents().list_documents(
         company,
         doc_class=(request.args.get("class") or "").strip(),
         status=(request.args.get("status") or "").strip(),
         query=(request.args.get("q") or "").strip(),
-        limit=request.args.get("limit") or 200,
-    )})
+        date_from=_date_arg("from"),
+        date_to=_date_arg("to"),
+        page=request.args.get("page") or 1,
+        page_size=request.args.get("pageSize") or 50,
+    ))
 
 
 @documents_bp.post("/documents")

@@ -1,11 +1,14 @@
 import React from "react";
-import { AlertTriangle, Copy, Download, RefreshCw, Trash2, Upload } from "lucide-react";
+import {
+  AlertTriangle, ChevronLeft, ChevronRight, Copy, Download, RefreshCw, Trash2, Upload,
+} from "lucide-react";
 
 import { formatValue } from "../lib/format.js";
 
 const CLASS_LABELS = {
   sales: "Sales",
   purchase: "Purchase",
+  utility: "Utilities & Fuel",
   project_image: "Project Image",
   salary: "Salary",
   other: "Other",
@@ -46,10 +49,22 @@ export function DocumentsPage({
   onFilterStatus,
   onQuery,
   onOpenUpload,
+  onPage,
+  onDateFrom,
+  onDateTo,
+  page,
+  pages,
+  total,
+  dateFrom,
+  dateTo,
   previewUrl,
 }) {
   const byClass = counts?.byClass || {};
   const queued = counts?.queued || 0;
+  // Which half of the detail pane is showing. Reset per document, because the
+  // tab that was useful for the last one says nothing about this one.
+  const [tab, setTab] = React.useState("original");
+  React.useEffect(() => setTab("original"), [detail?.id]);
 
   return (
     <section className="content-panel documents-page">
@@ -95,10 +110,18 @@ export function DocumentsPage({
             ))}
           </select>
         </label>
+        <label className="form-field">
+          <span>Dated from</span>
+          <input type="date" value={dateFrom} onChange={(event) => onDateFrom(event.target.value)} />
+        </label>
+        <label className="form-field">
+          <span>to</span>
+          <input type="date" value={dateTo} onChange={(event) => onDateTo(event.target.value)} />
+        </label>
         <label className="form-field grow">
           <span>Search</span>
           <input
-            placeholder="Issuer, document number, filename"
+            placeholder="Issuer, document number, filename, or any text on the page"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
           />
@@ -106,6 +129,7 @@ export function DocumentsPage({
       </div>
 
       <div className="documents-split">
+        <div>
         <div className="table-wrap">
           <table className="documents-table">
             <thead>
@@ -181,6 +205,33 @@ export function DocumentsPage({
           </table>
         </div>
 
+        {pages > 1 && (
+          <nav className="pager" aria-label="Pages">
+            <button
+              className="ghost-button"
+              disabled={page <= 1 || loading}
+              type="button"
+              onClick={() => onPage(page - 1)}
+            >
+              <ChevronLeft aria-hidden="true" size={15} />
+              Previous
+            </button>
+            <span>
+              Page {page} of {pages} - {total} document(s)
+            </span>
+            <button
+              className="ghost-button"
+              disabled={page >= pages || loading}
+              type="button"
+              onClick={() => onPage(page + 1)}
+            >
+              Next
+              <ChevronRight aria-hidden="true" size={15} />
+            </button>
+          </nav>
+        )}
+        </div>
+
         <aside className="document-detail">
           {!detail ? (
             <p className="muted">Select a document to see what was read from it.</p>
@@ -208,17 +259,62 @@ export function DocumentsPage({
                 </div>
               )}
 
-              {/* Fetched with the token and shown from a blob, not linked.
-                  Auth is a Bearer token, and the browser sends no header when
-                  it loads an <img src>, so a direct URL here is a 401 and an
-                  empty box. */}
-              {detail.previewPath && previewUrl && (
-                <img
-                  alt={`Preview of ${detail.filename}`}
-                  className="document-preview"
-                  src={previewUrl}
-                />
-              )}
+              <div className="detail-tabs" role="tablist">
+                <button
+                  aria-selected={tab === "original"}
+                  className={tab === "original" ? "active" : ""}
+                  role="tab"
+                  type="button"
+                  onClick={() => setTab("original")}
+                >
+                  Original
+                </button>
+                <button
+                  aria-selected={tab === "data"}
+                  className={tab === "data" ? "active" : ""}
+                  role="tab"
+                  type="button"
+                  onClick={() => setTab("data")}
+                >
+                  Extracted data
+                </button>
+              </div>
+
+              <div className="detail-tab-body">
+                {tab === "original" ? (
+                  /* Fetched with the token and shown from a blob, not linked.
+                     Auth is a Bearer token and the browser sends no header when
+                     it loads an <img src>, so a direct URL here is a 401 and an
+                     empty box. */
+                  detail.previewPath && previewUrl ? (
+                    <img
+                      alt={`Preview of ${detail.filename}`}
+                      className="document-preview"
+                      src={previewUrl}
+                    />
+                  ) : (
+                    <p className="muted">No preview for this file. Download the original below.</p>
+                  )
+                ) : (
+                  <>
+                    <label className="raw-json-label">Fields</label>
+                    <pre className="raw-json">
+                      {detail.raw ? JSON.stringify(detail.raw, null, 2) : "Not read yet."}
+                    </pre>
+
+                    {/* What the reader saw before it became fields -- the text
+                        layer for a document, the transcription for a photograph.
+                        Kept so a figure the fields got wrong can be checked
+                        without opening the original. */}
+                    {detail.ocrText && (
+                      <>
+                        <label className="raw-json-label">Text read from the document</label>
+                        <pre className="raw-json ocr-text">{detail.ocrText}</pre>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
 
               <div className="detail-actions">
                 <button
@@ -243,10 +339,6 @@ export function DocumentsPage({
 
               {/* The extraction verbatim. Nothing downstream consumes it yet --
                   this page files and reads, and stops there. */}
-              <label className="raw-json-label">Extracted data</label>
-              <pre className="raw-json">
-                {detail.raw ? JSON.stringify(detail.raw, null, 2) : "Not read yet."}
-              </pre>
             </>
           )}
         </aside>

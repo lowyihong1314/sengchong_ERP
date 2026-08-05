@@ -12,8 +12,10 @@ writes to AutoCount.
 import base64
 import json
 import mimetypes
+import random
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -22,7 +24,7 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 # Classes a document can be filed under. `unclassified` is not in the list on
 # purpose -- it is the state before a reading, not a possible reading.
-DOC_CLASSES = ("sales", "purchase", "project_image", "salary", "other")
+DOC_CLASSES = ("sales", "purchase", "utility", "project_image", "salary", "other")
 
 # The two firms whose books these are. Used by the classification rule below,
 # and matched loosely because a letterhead is read off a photograph: spacing,
@@ -31,20 +33,28 @@ OWN_COMPANIES = ("MANSON LIANG", "SENG CHONG")
 
 # --- classification rule ---------------------------------------------------
 #
-# Stated by the owner: a document whose letterhead is one of ours is a
-# purchase, and one whose letterhead is somebody else's is a sale.
+# Which side of the transaction this business is on, decided by who issued the
+# document rather than by whose name appears on it. A supplier invoice carries
+# the supplier's letterhead and our name in the "to" field; an invoice we
+# issued carries ours at the top and the customer's below.
 #
-# Worth knowing before trusting it: the usual reading of a sales invoice is the
-# other way round -- you issue it, so it carries your letterhead. This rule
-# holds if "letterhead" is taken to mean who the document is addressed to
-# rather than who issued it, which is how a purchase order looks in practice.
-#
-# Both readings are recoverable either way: `issuer` and `bill_to` are
-# extracted separately and every reply is stored verbatim, so re-filing the
-# whole archive under the opposite rule costs an UPDATE and no further reading.
+# The first version of this had it backwards -- it filed a document as a
+# purchase when the letterhead was ours -- and 105 of the first 138 uploads
+# came out as sales when every one of them was something the company had
+# bought. Naming both sides in the prompt, rather than "the letterhead", is
+# what makes the question answerable from a photograph.
 CLASSIFICATION_RULE = """\
-- purchase: the letterhead at the top of the document is MANSON LIANG or SENG CHONG
-- sales: the letterhead is any other business
+- sales: a document THIS business issued to somebody else. The letterhead at
+  the top is MANSON LIANG or SENG CHONG, and it is addressed to a customer.
+- purchase: a document this business received for goods or work bought --
+  materials, hardware, subcontracted labour, transport. The letterhead belongs
+  to another business and MANSON LIANG or SENG CHONG appears as the recipient.
+  If in doubt between sales and purchase, it is a purchase: this company
+  receives far more documents than it issues.
+- utility: a running cost rather than a purchase for a job -- water, electricity
+  (TNB), fuel at a petrol station, internet and phone, rent, insurance. These
+  are bills that arrive whether or not there is work on, which is what separates
+  them from a purchase.
 - salary: a payslip, salary voucher, EPF/KWSP statement, SOCSO/PERKESO form or
   any other document about paying staff, whoever the letterhead belongs to
 - project_image: a photograph of work rather than a document -- cabinets, a
@@ -56,7 +66,7 @@ SCHEMA = {
     "additionalProperties": False,
     "required": [
         "doc_class", "confidence", "issuer", "bill_to", "doc_no", "doc_date",
-        "currency", "total", "summary", "people", "lines", "notes",
+        "currency", "total", "summary", "people", "lines", "notes", "raw_text",
     ],
     "properties": {
         "doc_class": {"type": "string", "enum": list(DOC_CLASSES)},
@@ -99,6 +109,14 @@ SCHEMA = {
             "type": "string",
             "description": "Anything unreadable, ambiguous or worth a human's attention.",
         },
+        "raw_text": {
+            "type": "string",
+            "description": (
+                "Every line of text on the document, verbatim, in reading order. "
+                "Do not summarise, correct or reorder. Use [?] for a character "
+                "you cannot make out."
+            ),
+        },
     },
 }
 
@@ -123,11 +141,69 @@ Then read what is on it.
 - Put anything you could not read, or read with difficulty, in `notes`. A note
   saying a figure was unclear is more useful than a confident wrong figure.
 - confidence is your own, 0 to 1, for the classification.
+- raw_text is a straight transcription of everything printed or written on the
+  document, line by line. It is kept as the record of what was on the page, so
+  transcribe rather than tidy: keep the original wording, spelling and order,
+  and mark what you cannot read instead of guessing it.
 """
 
 
 class ExtractionError(RuntimeError):
     """The document could not be read. The message is shown to the user."""
+
+
+# A rate limit is not a failure, it is a queue asking to be slower. The account
+# here allows 30,000 tokens a minute and a batch of scans at four at a time
+# goes through that in seconds, so without this a large upload half-succeeds
+# and leaves the rest marked failed for no reason anyone can act on.
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+MAX_ATTEMPTS = 6
+
+
+def _post_with_retry(body, *, api_key, timeout):
+    request_body = json.dumps(body).encode()
+    last = None
+    for attempt in range(MAX_ATTEMPTS):
+        request = urllib.request.Request(
+            OPENAI_URL,
+            data=request_body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            detail = ""
+            try:
+                detail = json.loads(error.read()).get("error", {}).get("message", "")
+            except Exception:
+                pass
+            last = ExtractionError(f"OpenAI returned {error.code}: {detail or 'no detail'}")
+            if error.code not in RETRY_STATUSES or attempt == MAX_ATTEMPTS - 1:
+                raise last from error
+            # Retry-After when the server says so, otherwise back off. The
+            # jitter matters: four workers rate-limited by the same request
+            # would otherwise wake together and hit the limit again.
+            wait = _retry_after(error) or min(60, 2 ** attempt * 5)
+            time.sleep(wait + random.uniform(0, 2))
+        except (urllib.error.URLError, TimeoutError) as error:
+            last = ExtractionError(f"Could not reach OpenAI: {error}")
+            if attempt == MAX_ATTEMPTS - 1:
+                raise last from error
+            time.sleep(min(30, 2 ** attempt * 2) + random.uniform(0, 2))
+    raise last or ExtractionError("OpenAI could not be reached.")
+
+
+def _retry_after(error):
+    raw = ""
+    try:
+        raw = error.headers.get("Retry-After") or ""
+    except Exception:
+        return None
+    try:
+        return max(0.0, min(120.0, float(raw)))
+    except (TypeError, ValueError):
+        return None
 
 
 # --- what can be read, and how -------------------------------------------
@@ -292,9 +368,18 @@ def pdf_page_count(path):
     return 1
 
 
+def _schema_without_transcription():
+    """The same schema with the verbatim transcription dropped."""
+    import copy
+    schema = copy.deepcopy(SCHEMA)
+    schema["required"] = [f for f in schema["required"] if f != "raw_text"]
+    schema["properties"].pop("raw_text", None)
+    return schema
+
+
 def extract(path, *, api_key, model="gpt-4o", timeout=120, page=1):
     """
-    Read one document. Returns (fields, usage).
+    Read one document. Returns (fields, source_text, usage).
 
     Raises ExtractionError for anything the caller should show a human: a
     refused key, a rate limit, an unreadable file. The caller records the
@@ -303,22 +388,26 @@ def extract(path, *, api_key, model="gpt-4o", timeout=120, page=1):
     if not api_key:
         raise ExtractionError("No OPENAI_API_KEY is configured.")
 
-    payload = document_payload(path, page=page)
-    if payload["kind"] == "text":
-        content = [{"type": "text", "text": f"{PROMPT}\n\n--- document ---\n{payload['text']}"}]
+    payload_in = document_payload(path, page=page)
+    if payload_in["kind"] == "text":
+        content = [{"type": "text",
+                    "text": f"{PROMPT}\n\n--- document ---\n{payload_in['text']}"}]
     else:
-        if not payload["bytes"]:
+        if not payload_in["bytes"]:
             raise ExtractionError("The file is empty.")
-        encoded = base64.b64encode(payload["bytes"]).decode()
+        encoded = base64.b64encode(payload_in["bytes"]).decode()
         content = [
             {"type": "text", "text": PROMPT},
             {"type": "image_url",
-             "image_url": {"url": f"data:{payload['mime']};base64,{encoded}", "detail": "high"}},
+             "image_url": {"url": f"data:{payload_in['mime']};base64,{encoded}", "detail": "high"}},
         ]
 
     body = {
         "model": model,
-        "max_tokens": 4000,
+        # A full transcription of a dense invoice plus the fields runs long;
+        # at 4000 the JSON came back truncated and unparseable, which reads as
+        # "the reply was not the expected shape" and hides the real cause.
+        "max_tokens": 16000,
         # Reading a document is transcription, not composition. Anything above
         # zero invents plausible digits.
         "temperature": 0,
@@ -329,35 +418,60 @@ def extract(path, *, api_key, model="gpt-4o", timeout=120, page=1):
         "messages": [{"role": "user", "content": content}],
     }
 
-    request = urllib.request.Request(
-        OPENAI_URL,
-        data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-    except urllib.error.HTTPError as error:
-        detail = ""
-        try:
-            detail = json.loads(error.read()).get("error", {}).get("message", "")
-        except Exception:
-            pass
-        raise ExtractionError(f"OpenAI returned {error.code}: {detail or 'no detail'}") from error
-    except (urllib.error.URLError, TimeoutError) as error:
-        raise ExtractionError(f"Could not reach OpenAI: {error}") from error
+    payload = _post_with_retry(body, api_key=api_key, timeout=timeout)
 
+    # A dense page can be longer than any output limit. Rather than lose the
+    # document, ask again for the fields alone -- knowing what the invoice says
+    # without a transcription beats knowing nothing.
+    if (payload.get("choices") or [{}])[0].get("finish_reason") == "length":
+        body["response_format"]["json_schema"]["schema"] = _schema_without_transcription()
+        payload = _post_with_retry(body, api_key=api_key, timeout=timeout)
+
+    choice = (payload.get("choices") or [{}])[0]
+    if choice.get("finish_reason") == "length":
+        raise ExtractionError(
+            "The document is too long to transcribe in one reply; the answer was cut off."
+        )
     try:
-        fields = json.loads(payload["choices"][0]["message"]["content"])
+        fields = json.loads(choice["message"]["content"])
     except (KeyError, IndexError, ValueError, TypeError) as error:
         raise ExtractionError("OpenAI's reply was not the expected shape.") from error
 
+    # For a text document the source is what we sent; for a photograph the only
+    # transcription that exists is the model's own.
+    source_text = payload_in["text"] if payload_in["kind"] == "text" else str(fields.get("raw_text") or "")
+
     usage = payload.get("usage") or {}
-    return fields, {
+    return fields, source_text, {
         "model": payload.get("model") or model,
         "tokens_in": int(usage.get("prompt_tokens") or 0),
         "tokens_out": int(usage.get("completion_tokens") or 0),
     }
+
+
+def settle_class(proposed, issuer, bill_to):
+    """
+    Correct the model's classification where the parties settle it outright.
+
+    The model reads a photograph and sometimes swaps the two sides of a form,
+    which turns a supplier invoice into a sale. One direction is beyond
+    argument: a document addressed to us was received by us, whatever the
+    reading made of the letterhead.
+
+    The mirror case -- our letterhead, addressed to somebody else -- is left
+    alone, because that is also exactly what a genuine sales invoice looks like
+    and there is no field that separates the two.
+    """
+    proposed = str(proposed or "other").strip() or "other"
+
+    # These say what a document is about, not which side of a trade it is on.
+    if proposed in ("salary", "project_image", "utility"):
+        return proposed
+
+    if looks_like_own_company(bill_to) and not looks_like_own_company(issuer):
+        return "purchase"
+
+    return proposed
 
 
 def looks_like_own_company(name):

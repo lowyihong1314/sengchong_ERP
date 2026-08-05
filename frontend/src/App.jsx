@@ -162,6 +162,10 @@ export function App() {
   const [navOpen, setNavOpen] = React.useState(false);
   const [documentPreviewUrl, setDocumentPreviewUrl] = React.useState("");
   const [docQuery, setDocQuery] = React.useState("");
+  const [docDateFrom, setDocDateFrom] = React.useState("");
+  const [docDateTo, setDocDateTo] = React.useState("");
+  const [docPage, setDocPage] = React.useState(1);
+  const [docPaging, setDocPaging] = React.useState({ page: 1, pages: 1, total: 0 });
   const [prefetchTick, setPrefetchTick] = React.useState(0);
   // Cluster hooks register their teardown here so resetWorkspaceState can reach
   // them even though they are created later in the render.
@@ -407,10 +411,22 @@ export function App() {
       if (!token) return;
       try {
         if (options.quiet !== true) setDocumentsLoading(true);
-        const params = new URLSearchParams({ company: "all", limit: "300" });
-        if (options.docClass ?? docFilterClass) params.set("class", options.docClass ?? docFilterClass);
-        if (options.docStatus ?? docFilterStatus) params.set("status", options.docStatus ?? docFilterStatus);
-        if (options.q ?? docQuery) params.set("q", options.q ?? docQuery);
+        // Every filter is read from options first so a change can take effect
+        // in the same call that sets its state -- setState is not immediate,
+        // and reading the state here would fetch the previous filter.
+        const pick = (key, fallback) => (options[key] !== undefined ? options[key] : fallback);
+        const params = new URLSearchParams({ company: "all", pageSize: "50" });
+        params.set("page", String(pick("page", docPage)));
+        const cls = pick("docClass", docFilterClass);
+        const st = pick("docStatus", docFilterStatus);
+        const q = pick("q", docQuery);
+        const from = pick("from", docDateFrom);
+        const to = pick("to", docDateTo);
+        if (cls) params.set("class", cls);
+        if (st) params.set("status", st);
+        if (q) params.set("q", q);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
 
         const [list, meta] = await Promise.all([
           requestJson(`/api/documents?${params}`, { headers: authHeaders() }),
@@ -419,8 +435,16 @@ export function App() {
         const rows = normalizeRows(list);
         setDocuments(rows);
         setDocumentCounts(meta);
+        setDocPaging({
+          page: list.page || 1,
+          pages: list.pages || 1,
+          total: list.total || rows.length,
+        });
         if (options.quiet !== true) {
-          const nextStatus = { tone: "ok", text: `${rows.length} document(s)` };
+          const nextStatus = {
+            tone: "ok",
+            text: `${list.total || rows.length} document(s)`,
+          };
           updateModuleStage("documents", { rows: [], loaded: true, status: nextStatus });
           if (activeModuleRef.current === "documents") setStatus(nextStatus);
         }
@@ -431,7 +455,10 @@ export function App() {
         setDocumentsLoading(false);
       }
     },
-    [authHeaders, docFilterClass, docFilterStatus, docQuery, handleAuthError, token, updateModuleStage]
+    [
+      authHeaders, docDateFrom, docDateTo, docFilterClass, docFilterStatus,
+      docPage, docQuery, handleAuthError, token, updateModuleStage,
+    ]
   );
 
   // The worker reads documents after the upload has already returned, so the
@@ -2755,17 +2782,41 @@ export function App() {
             previewUrl={documentPreviewUrl}
             onDelete={deleteDocument}
             onDownload={downloadDocument}
+            dateFrom={docDateFrom}
+            dateTo={docDateTo}
+            page={docPaging.page}
+            pages={docPaging.pages}
+            total={docPaging.total}
+            onDateFrom={(value) => {
+              setDocDateFrom(value);
+              setDocPage(1);
+              loadDocuments({ from: value, page: 1 });
+            }}
+            onDateTo={(value) => {
+              setDocDateTo(value);
+              setDocPage(1);
+              loadDocuments({ to: value, page: 1 });
+            }}
+            onPage={(value) => {
+              setDocPage(value);
+              loadDocuments({ page: value });
+            }}
             onFilterClass={(value) => {
+              // Back to page one: page seven of the old filter is unlikely to
+              // exist under the new one, and lands on an empty table.
               setDocFilterClass(value);
-              loadDocuments({ docClass: value });
+              setDocPage(1);
+              loadDocuments({ docClass: value, page: 1 });
             }}
             onFilterStatus={(value) => {
               setDocFilterStatus(value);
-              loadDocuments({ docStatus: value });
+              setDocPage(1);
+              loadDocuments({ docStatus: value, page: 1 });
             }}
             onQuery={(value) => {
               setDocQuery(value);
-              loadDocuments({ q: value, quiet: true });
+              setDocPage(1);
+              loadDocuments({ q: value, page: 1, quiet: true });
             }}
             onReanalyse={reanalyseDocument}
             onOpenUpload={() => showModuleList("document-upload")}

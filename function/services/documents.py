@@ -25,7 +25,13 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from models import db
 from models.documents import ErpDocument
 
-from .ai_extract import ExtractionError, extract, is_readable, pdf_page_count
+from .ai_extract import (
+    ExtractionError,
+    extract,
+    is_readable,
+    pdf_page_count,
+    settle_class,
+)
 from .values import now, to_iso
 
 # How many documents are read at once. Each one is an API call taking a couple
@@ -225,7 +231,7 @@ class DocumentStore:
             return None
 
         try:
-            fields, usage = extract(
+            fields, source_text, usage = extract(
                 self.base_dir / document.stored_path, api_key=api_key, model=model
             )
         except ExtractionError as error:
@@ -242,7 +248,12 @@ class DocumentStore:
             return self._public(document)
 
         document.raw_json = json.dumps(fields, ensure_ascii=False, indent=2)
-        document.doc_class = str(fields.get("doc_class") or "other")[:24]
+        document.ocr_text = source_text or ""
+        document.doc_class = settle_class(
+            str(fields.get("doc_class") or "other")[:24],
+            fields.get("issuer"),
+            fields.get("bill_to"),
+        )
         document.confidence = _decimal(fields.get("confidence"), Decimal("0"))
         document.issuer = str(fields.get("issuer") or "")[:255]
         document.bill_to = str(fields.get("bill_to") or "")[:255]
@@ -290,29 +301,61 @@ class DocumentStore:
 
     # ------------------------------------------------------------------ reads
 
-    def list_documents(self, company, *, doc_class="", status="", query="", limit=200):
-        statement = db.select(ErpDocument)
+    def list_documents(self, company, *, doc_class="", status="", query="",
+                       date_from=None, date_to=None, page=1, page_size=50):
+        """
+        One page of documents, with the total so the caller can page through.
+
+        Dates filter on the document's own date, not the upload time: somebody
+        looking for last March's invoices means the invoices dated last March,
+        whenever they happened to be photographed.
+        """
+        filters = []
         if company:
-            statement = statement.where(ErpDocument.company == str(company).strip().upper())
+            filters.append(ErpDocument.company == str(company).strip().upper())
         if doc_class:
-            statement = statement.where(ErpDocument.doc_class == doc_class)
+            filters.append(ErpDocument.doc_class == doc_class)
         if status:
-            statement = statement.where(ErpDocument.status == status)
+            filters.append(ErpDocument.status == status)
+        if date_from:
+            filters.append(ErpDocument.doc_date >= date_from)
+        if date_to:
+            filters.append(ErpDocument.doc_date <= date_to)
         if query:
             like = f"%{query.strip()}%"
-            statement = statement.where(db.or_(
+            filters.append(db.or_(
                 ErpDocument.issuer.ilike(like),
                 ErpDocument.bill_to.ilike(like),
                 ErpDocument.doc_no.ilike(like),
                 ErpDocument.summary.ilike(like),
                 ErpDocument.original_filename.ilike(like),
+                # The transcription too, so a part number printed on a line of
+                # an invoice is findable even though no column holds it.
+                ErpDocument.ocr_text.ilike(like),
             ))
+
+        page = max(1, int(page or 1))
+        page_size = max(1, min(int(page_size or 50), 200))
+        total = db.session.scalar(
+            db.select(db.func.count()).select_from(ErpDocument).where(*filters)
+        ) or 0
+
         # id breaks ties: a batch of fifty uploads shares a timestamp to the
-        # second, and without it the order changes between requests.
-        statement = statement.order_by(
-            ErpDocument.uploaded_at.desc(), ErpDocument.id.desc()
-        ).limit(max(1, min(int(limit or 200), 1000)))
-        return [self._public(row) for row in db.session.scalars(statement)]
+        # second, and without it a row can appear on two pages or on neither.
+        rows = db.session.scalars(
+            db.select(ErpDocument)
+            .where(*filters)
+            .order_by(ErpDocument.uploaded_at.desc(), ErpDocument.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return {
+            "data": [self._public(row) for row in rows],
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+            "pages": max(1, -(-total // page_size)),
+        }
 
     def get_document(self, document_id):
         document = db.session.get(ErpDocument, str(document_id or "").strip())
@@ -320,6 +363,7 @@ class DocumentStore:
             return None
         payload = self._public(document)
         payload["raw"] = _parse_raw(document.raw_json)
+        payload["ocrText"] = document.ocr_text or ""
         return payload
 
     def counts(self, company):

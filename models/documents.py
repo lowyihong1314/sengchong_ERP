@@ -66,6 +66,17 @@ class ErpDocument(db.Model):
 
     raw_json = db.Column(db.Text, nullable=False, default="", server_default="")
 
+    # Everything the reader actually saw, before it was turned into fields.
+    #
+    # For a PDF with a text layer, a spreadsheet or a Word file this is the
+    # text that was sent. For a photograph it is the model's transcription,
+    # which is the only reading of those pixels that will ever exist -- the
+    # original is a JPEG and re-reading it costs another call and may not
+    # agree. Anything the structured fields have no column for is still in
+    # here, which is what makes a later change of mind answerable without
+    # paying to read the archive again.
+    ocr_text = db.Column(db.Text, nullable=False, default="", server_default="")
+
     # Which document this one appears to repeat. Set by the second dedupe pass
     # and never enforced as a constraint -- two vouchers really can share a
     # number, so this flags for a human rather than refusing the upload.
