@@ -345,12 +345,23 @@ class DocumentStore:
             db.select(db.func.count()).select_from(ErpDocument).where(*filters)
         ) or 0
 
-        # id breaks ties: a batch of fifty uploads shares a timestamp to the
-        # second, and without it a row can appear on two pages or on neither.
+        # Newest document first, by the date printed on it rather than when it
+        # was photographed -- a stack scanned in one sitting spans months, and
+        # ordering by upload time puts them in whatever order they came off the
+        # pile.
+        #
+        # NULLS LAST because a document with no readable date is not the newest
+        # one; Postgres would otherwise sort it to the top of a descending sort.
+        # uploaded_at and id break ties: a batch shares a date, and without a
+        # total order a row can appear on two pages or on neither.
         rows = db.session.scalars(
             db.select(ErpDocument)
             .where(*filters)
-            .order_by(ErpDocument.uploaded_at.desc(), ErpDocument.id.desc())
+            .order_by(
+                ErpDocument.doc_date.desc().nullslast(),
+                ErpDocument.uploaded_at.desc(),
+                ErpDocument.id.desc(),
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
